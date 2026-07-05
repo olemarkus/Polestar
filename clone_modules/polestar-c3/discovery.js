@@ -6,22 +6,26 @@ const { randomUUID } = require('crypto');
 const C3_DISCOVERY_URL = 'https://cnepmob.volvocars.com/';
 const C3_ACCEPT_HEADER = 'application/volvo.cloud.cnepmob.v1+json';
 
-const APP_BACKEND_GRAPHQL_URL = 'https://pc-api.polestar.com/eu-north-1/app-backend/api/graphql';
-const APP_BACKEND_ACCEPT = 'multipart/mixed;deferSpec=20220824, application/graphql-response+json, application/json';
-const APP_USER_AGENT = 'PolestarApp/5.5.0b1102 Android/14';
-const APP_FORCE_UPDATE_VERSION = '5.5.0';
-const APP_LOCALE = 'SE';
+// Consumer car list — the same endpoint + query the Polestar website uses. The
+// previous app-backend `getVehiclesInformation` query returns an empty list for
+// newer cars (e.g. Polestar 3), so we query the consumer API instead.
+// getConsumerCarsV2 returns a flat VehicleInformation (no nested content{}), so
+// we re-nest modelName into content.model.name for the driver's mapping.
+// NB: this type has no `content`/`hasPerformancePackage`/`images` fields — the
+// server rejects the whole query (FieldUndefined) if you ask for them, which
+// reads downstream as "no vehicles". Keep the field set flat.
+const MYSTAR_V2_URL = 'https://pc-api.polestar.com/eu-north-1/mystar-v2/';
 
 const GET_VEHICLES_QUERY = `
-query GetVDMSCars {
-    vdms {
-        getVehiclesInformation {
-            vin
-            internalVehicleIdentifier
-            registrationNo
-            modelYear
-            content { model { name } }
-        }
+query getCars {
+    getConsumerCarsV2 {
+        vin
+        internalVehicleIdentifier
+        registrationNo
+        modelName
+        modelYear
+        deliveryDate
+        userIsPrimaryDriver
     }
 }
 `;
@@ -46,28 +50,39 @@ async function discoverC3Endpoint(accessToken) {
 }
 
 async function getVehicles(accessToken) {
-    const r = await axios.post(APP_BACKEND_GRAPHQL_URL, {
-        operationName: 'GetVDMSCars',
+    const r = await axios.post(MYSTAR_V2_URL, {
+        operationName: 'getCars',
         variables: {},
         query: GET_VEHICLES_QUERY,
-        extensions: { clientLibrary: { name: 'apollo-kotlin', version: '4.4.1' } },
     }, {
         headers: {
-            'user-agent': APP_USER_AGENT,
-            'x-polestar-force-update-version': APP_FORCE_UPDATE_VERSION,
-            'x-polestar-locale': APP_LOCALE,
-            'x-polestarid-authorization': `Bearer ${accessToken}`,
-            'x-apollo-operation-name': 'GetVDMSCars',
+            authorization: `Bearer ${accessToken}`,
             'x-apollo-request-uuid': randomUUID(),
-            accept: APP_BACKEND_ACCEPT,
+            accept: 'application/json',
             'content-type': 'application/json',
         },
         timeout: 30000,
         validateStatus: () => true,
     });
     if (r.status !== 200) throw new Error(`Vehicle list failed: ${r.status} ${JSON.stringify(r.data)}`);
-    const cars = (((r.data || {}).data || {}).vdms || {}).getVehiclesInformation || [];
-    return cars;
+    // A GraphQL endpoint returns HTTP 200 even on query errors — surface them
+    // instead of silently returning an empty list (which reads as "no cars").
+    const errors = (r.data || {}).errors;
+    if (errors && errors.length) throw new Error(`Vehicle list error: ${errors.map((e) => e.message).join('; ')}`);
+    const cars = ((r.data || {}).data || {}).getConsumerCarsV2 || [];
+    // Re-shape the flat VehicleInformation into the nested form the driver
+    // expects (bev.content.model.name, bev.registrationNo, …); fields the API
+    // no longer returns (images, hasPerformancePackage) stay undefined and the
+    // driver falls back to null.
+    return cars.map((c) => ({
+        vin: c.vin,
+        internalVehicleIdentifier: c.internalVehicleIdentifier,
+        registrationNo: c.registrationNo,
+        modelYear: c.modelYear,
+        deliveryDate: c.deliveryDate,
+        userIsPrimaryDriver: c.userIsPrimaryDriver,
+        content: { model: { name: c.modelName } },
+    }));
 }
 
 module.exports = { discoverC3Endpoint, getVehicles };

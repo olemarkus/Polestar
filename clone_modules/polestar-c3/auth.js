@@ -6,8 +6,14 @@ const qs = require('qs');
 
 const OIDC_PROVIDER = 'https://polestarid.eu.polestar.com';
 const OIDC_DISCOVERY = `${OIDC_PROVIDER}/.well-known/openid-configuration`;
-const CLIENT_ID = 'lp8dyrd_10';
-const REDIRECT_URI = 'polestar-explore://explore.polestar.com';
+// Use the OAuth client the Polestar website uses (`l3oopkc_10`). The previous
+// `lp8dyrd_10` ("Polestar Explore") client is NOT authorized for the mystar-v2
+// consumer API (getConsumerCarsV2) — it returns 401 — so the vehicle list fell
+// back to an app-backend query that omits newer cars, yielding an empty list
+// for e.g. Polestar 3 owners. `l3oopkc_10` + the website sign-in callback
+// authorize the consumer API that discovery.js now queries.
+const CLIENT_ID = 'l3oopkc_10';
+const REDIRECT_URI = 'https://www.polestar.com/sign-in-callback';
 const SCOPES = 'openid profile email customer:attributes customer:attributes:write';
 
 function b64url(buf) {
