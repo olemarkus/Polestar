@@ -1,19 +1,21 @@
 'use strict';
 
 const { Driver } = require('homey');
-const LegacyPolestar = require('../../clone_modules/polestar.js');
 const PolestarC3Compat = require('../../clone_modules/polestar-c3/compat');
-const HomeyCrypt = require('../../lib/homeycrypt')
-
-function Polestar(email, password, homey) {
-    const legacy = homey && homey.settings.get('c3_backend_disabled') === true;
-    const Client = legacy ? LegacyPolestar : PolestarC3Compat;
-    return new Client(email, password);
-}
+const HomeyCrypt = require('../../lib/homeycrypt');
+const {
+    TOKEN_STORE_KEY,
+    clearLegacySettings,
+    hasLegacySettings,
+    normalizeToken,
+    persistToken,
+    readToken,
+} = require('../../lib/polestarAuthStore');
 
 class Vehicle extends Driver {
     async onInit() {
         this.homey.app.log('Polestar Driver has been initialized', 'Polestar Driver', 'DEBUG');
+        await this._clearLegacyCredentialsIfMigrated();
         this._registerFlowCards();
     }
 
@@ -104,195 +106,240 @@ class Vehicle extends Driver {
         this.homey.app.log('Polestar flow cards registered', 'Polestar Driver', 'DEBUG');
     }
 
-    async onRepair(session, device) {
-        session.setHandler("showView", async (data) => {
-            this.homey.app.log('Login page of repair is showing, send credentials');
+    _createPolestarClient(username = null, password = null) {
+        return new PolestarC3Compat(username, password);
+    }
 
-            var username = this.homey.settings.get('user_email');
-            var cryptedpassword = this.homey.settings.get('user_password');
-            try {
-                plainpass = await HomeyCrypt.decrypt(cryptedpassword, username);
-                await session.emit('loadaccount', { username, password: plainpass });
-            } catch (err) {
-                await session.emit('loadaccount', { username, password: '' })
+    async _authenticate(username, password) {
+        if (typeof username !== 'string' || username.trim() === ''
+            || typeof password !== 'string' || password === '') {
+            throw new Error('Email and password are required');
+        }
+
+        const client = this._createPolestarClient(username.trim(), password);
+        try {
+            await client.login();
+            const token = normalizeToken(client.getToken());
+            if (!token) {
+                throw new Error('Polestar did not return a reusable refresh token');
             }
-        });
+            return { client, token };
+        } catch (err) {
+            if (typeof client.close === 'function') client.close();
+            throw err;
+        }
+    }
 
-        session.setHandler('testlogin', async (data) => {
-            this.homey.app.log('Test login and provide feedback, username length: ' + data.username.length + ' password length: ' + data.password.length, 'Polestar Driver');
-            //Store the provided credentials, but hash and salt it first
-            this.homey.settings.set('user_email', data.username);
-            HomeyCrypt.crypt(data.password, data.username).then(cryptedpass => {
-                //this.homey.app.log(JSON.stringify(cryptedpass));
-                this.homey.settings.set('user_password', cryptedpass);
-            })
-            this.homey.app.log('Password encrypted, credentials stored. Clear existing tokens.', 'Polestar Driver');
-            //Now we have the encrypted password stored we can start testing the info
+    _mapVehicle(bev, token) {
+        const modelName = bev && bev.content && bev.content.model && bev.content.model.name
+            ? bev.content.model.name
+            : 'Polestar';
+        const registration = bev.registrationNo || null;
+        const linked = bev.userIsLinked === true ? 'yes' : (bev.userIsLinked === false ? 'no' : '?');
+        const owner = bev.userIsOwner === true ? 'yes' : (bev.userIsOwner === false ? 'no' : '?');
+        this.homey.app.log(`Located ${modelName} — linked:${linked} owner:${owner}`, 'Polestar Driver', 'DEBUG');
+
+        return {
+            id: bev.vin,
+            name: registration ? `${modelName} (${registration})` : modelName,
+            data: {
+                vin: bev.vin,
+                registration,
+                internalVehicleIdentifier: bev.internalVehicleIdentifier,
+                modelName,
+                modelYear: bev.modelYear,
+                carImage: bev.content && bev.content.images && bev.content.images.studio
+                    ? bev.content.images.studio.url
+                    : null,
+                deliveryDate: bev.deliveryDate,
+                hasPerformancePackage: bev.hasPerformancePackage,
+            },
+            store: {
+                [TOKEN_STORE_KEY]: token,
+            },
+        };
+    }
+
+    async onRepair(session, device) {
+        session.setHandler('login', async ({ username, password }) => {
+            let client;
             try {
-                var polestar = Polestar(data.username, data.password, this.homey);
-                await polestar.login();
-                var testresult = await polestar.getVehicles();
-                this.homey.app.log('Credential test ok:', 'Polestar Driver', 'DEBUG', testresult);
-                if (!testresult || testresult.length === 0) {
-                    const legacy = await this._tryLegacyFallback(data.username, data.password);
-                    if (legacy.ok) {
-                        this.homey.settings.set('c3_backend_disabled', true);
-                        this.homey.app.log('Repair: C3 returned no vehicles; legacy backend found ' + legacy.count + '. Switching to legacy.', 'Polestar Driver');
-                        await session.nextView();
-                        return true;
-                    }
-                    return false;
+                const authenticated = await this._authenticate(username, password);
+                client = authenticated.client;
+
+                const vehicles = await client.getVehicles();
+                const storedVin = device.getData().vin;
+                if (!Array.isArray(vehicles) || !vehicles.some((vehicle) => vehicle.vin === storedVin)) {
+                    throw new Error('This vehicle is not linked to that Polestar account');
                 }
-                await session.nextView();
+
+                await device.replacePolestarClient(client);
+                client = null;
+                await this._clearLegacyCredentialsIfMigrated();
+                this.homey.app.log('Polestar authentication repaired', 'Polestar Driver', 'DEBUG');
                 return true;
             } catch (err) {
-                this.homey.app.log('Credential test failed:', 'Polestar Driver', 'ERROR', err);
-                return false;
+                if (client && typeof client.close === 'function') client.close();
+                this.homey.app.log('Polestar repair authentication failed', 'Polestar Driver', 'ERROR');
+                throw new Error(err && err.message === 'This vehicle is not linked to that Polestar account'
+                    ? err.message
+                    : 'Authentication failed. Check your Polestar ID and password.');
             }
         });
     }
 
     async onPair(session) {
-        let mydevices;
+        let pairedClient = null;
+        let pairedToken = null;
+        const closePairedClient = () => {
+            if (pairedClient && typeof pairedClient.close === 'function') pairedClient.close();
+            pairedClient = null;
+            pairedToken = null;
+        };
 
-        session.setHandler('showView', async (viewId) => {
-            //These actions send data to the custom views
+        session.setHandler('login', async ({ username, password }) => {
+            closePairedClient();
 
-            if (viewId === 'login') {
-                this.homey.app.log('Login page of pairing is showing, send credentials', 'Polestar Driver');
-                //Send the stored credentials to the 
-                var username = this.homey.settings.get('user_email');
-                var cryptedpassword = this.homey.settings.get('user_password');
-                try {
-                    plainpass = await HomeyCrypt.decrypt(cryptedpassword, username);
-                    await session.emit('loadaccount', { username, password: plainpass });
-                } catch (err) {
-                    await session.emit('loadaccount', { username, password: '' })
-                }
-            };
-        });
-
-        session.setHandler('list_devices', async (data) => {
-            return mydevices;
-        });
-
-        session.setHandler('add_devices', async (data) => {
-            if (data.length > 0) {
-                this.homey.app.log('vehicle [' + data[0].name + '] added', 'Polestar Driver');
-            } else {
-                this.homey.app.log('No vehicle added', 'Polestar Driver', 'WARNING');
-            }
-        });
-
-        session.setHandler('discover_vehicles', async (data) => {
-            this.homey.app.log('Polestar vehicles discovery started...', 'Polestar Driver');
-            let PolestarUser = this.homey.settings.get('user_email');
-            let PolestarPwd = await HomeyCrypt.decrypt(this.homey.settings.get('user_password'), PolestarUser);
             try {
-                this.homey.app.log('Attempting to login to Polestar', 'Polestar Driver');
-                var polestar = Polestar(PolestarUser, PolestarPwd, this.homey);
-                await polestar.login();
-                this.homey.app.log('Login successful, retrieving vehicles', 'Polestar Driver');
-                var vehiclelist = await polestar.getVehicles();
-                if (vehiclelist && vehiclelist.length > 0) {
-                    var vehicles = vehiclelist.map((bev) => {
-                        try {
-                            // Log ownership status so we can correlate feature-availability
-                            // complaints with linked/owner state (C3 GetMyCars returns these
-                            // as of PR #3). Non-owner accounts on lease / secondhand cars may
-                            // hit permission-limited endpoints; we don't know yet which
-                            // features degrade without owner rights.
-                            const linked = bev.userIsLinked === true ? 'yes' : (bev.userIsLinked === false ? 'no' : '?');
-                            const owner  = bev.userIsOwner  === true ? 'yes' : (bev.userIsOwner  === false ? 'no' : '?');
-                            this.homey.app.log(`Located vehicle ${bev.content.model.name} — linked:${linked} owner:${owner}`, 'Polestar Driver');
-                            let device = {
-                                id: bev.vin,
-                                name: bev.content.model.name + ' (' + bev.registrationNo + ')',
-                                data: {
-                                    vin: bev.vin,
-                                    registration: bev.registrationNo,
-                                    internalVehicleIdentifier: bev.internalVehicleIdentifier,
-                                    modelName: bev.content.model.name,
-                                    modelYear: bev.modelYear,
-                                    carImage: bev.content.images?.studio?.url || null,
-                                    deliveryDate: bev.deliveryDate,
-                                    hasPerformancePackage: bev.hasPerformancePackage
-                                }
-                            }
-
-                            return device;
-                        } catch (err) {
-                            this.homey.app.log('Could not convert vehicle info to bev', 'Polestar Driver', 'ERROR', err);
-                            return err;
-                        }
-                    });
-                } else {
-                    this.homey.app.log('No vehicles found', 'Polestar Driver', 'WARNING');
-                    var vehicles = [];
-                    return await session.emit('noVehiclesFound', 'No vehicles found, please try again.');
-                }
-
-                this.homey.app.log('Vehicles ready to be added:', 'Polestar Driver', 'DEBUG', vehicles);
-                mydevices = vehicles;
-                await session.showView('list_devices');
-            } catch (err) {
-                this.homey.app.log('Could not login to Polestar', 'Polestar Driver', 'ERROR', err);
-                return err;
+                const authenticated = await this._authenticate(username, password);
+                pairedClient = authenticated.client;
+                pairedToken = authenticated.token;
+                pairedClient.onTokenChanged(async (token) => {
+                    const normalized = normalizeToken(token);
+                    if (!normalized) throw new Error('Polestar returned an invalid token');
+                    pairedToken = normalized;
+                });
+                this.homey.app.log('Polestar pairing authentication succeeded', 'Polestar Driver', 'DEBUG');
+                return true;
+            } catch (_) {
+                closePairedClient();
+                this.homey.app.log('Polestar pairing authentication failed', 'Polestar Driver', 'ERROR');
+                throw new Error('Authentication failed. Check your Polestar ID and password.');
             }
         });
 
-        session.setHandler('testlogin', async (data) => {
-            this.homey.app.log('Test login and provide feedback, username length: ' + data.username.length + ' password length: ' + data.password.length, 'Polestar Driver');
-            this.homey.settings.set('user_email', data.username);
-            HomeyCrypt.crypt(data.password, data.username).then(cryptedpass => {
-                this.homey.settings.set('user_password', cryptedpass);
-            })
-            this.homey.app.log('Password encrypted, credentials stored.', 'Polestar Driver');
+        session.setHandler('list_devices', async () => {
+            if (!pairedClient || !pairedToken) {
+                throw new Error('Not authenticated. Please log in first.');
+            }
 
-            const polestar = Polestar(data.username, data.password, this.homey);
+            const vehicles = await pairedClient.getVehicles();
+            pairedToken = normalizeToken(pairedClient.getToken());
+            if (!pairedToken) throw new Error('Polestar returned an invalid token');
+            this.homey.app.log('Polestar vehicles discovered', 'Polestar Driver', 'DEBUG', {
+                count: Array.isArray(vehicles) ? vehicles.length : 0,
+            });
+            return Array.isArray(vehicles)
+                ? vehicles.map((vehicle) => this._mapVehicle(vehicle, pairedToken))
+                : [];
+        });
+
+        session.setHandler('add_devices', async (devices) => {
             try {
-                await polestar.login();
-            } catch (err) {
-                this.homey.app.log('Credential test failed:', 'Polestar Driver', 'ERROR', err);
-                return { ok: false, reason: 'login_failed' };
+                this.homey.app.log(
+                    Array.isArray(devices) && devices.length > 0
+                        ? `${devices.length} Polestar vehicle(s) added`
+                        : 'No Polestar vehicle added',
+                    'Polestar Driver',
+                    Array.isArray(devices) && devices.length > 0 ? 'DEBUG' : 'WARNING',
+                );
+                await this._clearLegacyCredentialsIfMigrated();
+            } finally {
+                closePairedClient();
             }
-            let vehicles;
-            try {
-                vehicles = await polestar.getVehicles();
-            } catch (err) {
-                this.homey.app.log('Retrieve vehicles failed:', 'Polestar Driver', 'ERROR', err);
-                return { ok: false, reason: 'login_failed' };
-            }
-            this.homey.app.log('Credential test ok, vehicle count:', 'Polestar Driver', 'DEBUG', (vehicles || []).length);
-            if (!vehicles || vehicles.length === 0) {
-                // C3 backend doesn't list some older Polestar 2 cars (2021-ish).
-                // Try the legacy backend before giving up — and if it finds
-                // vehicles, persist the preference so all later operations
-                // use it too.
-                const legacy = await this._tryLegacyFallback(data.username, data.password);
-                if (legacy.ok) {
-                    this.homey.settings.set('c3_backend_disabled', true);
-                    this.homey.app.log('C3 returned no vehicles; legacy backend found ' + legacy.count + '. Switching to legacy.', 'Polestar Driver');
-                    return { ok: true };
-                }
-                return { ok: false, reason: 'no_vehicles' };
-            }
-            return { ok: true };
+        });
+
+        session.setHandler('disconnect', async () => {
+            closePairedClient();
         });
     }
 
-    async _tryLegacyFallback(email, password) {
-        try {
-            const legacy = new LegacyPolestar(email, password);
-            await legacy.login();
-            const vehicles = await legacy.getVehicles();
-            if (vehicles && vehicles.length > 0) {
-                return { ok: true, count: vehicles.length };
-            }
-        } catch (err) {
-            this.homey.app.log('Legacy fallback failed:', 'Polestar Driver', 'DEBUG', err && err.message);
+    async getTokenForDevice(device) {
+        const stored = readToken(device);
+        if (stored) {
+            await this._clearLegacyCredentialsIfMigrated();
+            return stored;
         }
-        return { ok: false, count: 0 };
+
+        if (!this._legacyMigrationPromise) {
+            this._legacyMigrationPromise = this._migrateLegacyCredentials()
+                .finally(() => {
+                    this._legacyMigrationPromise = null;
+                });
+        }
+
+        await this._legacyMigrationPromise;
+        const migrated = readToken(device);
+        if (!migrated) {
+            throw new Error('Polestar authentication is missing. Repair the device to sign in again.');
+        }
+        return migrated;
+    }
+
+    async _migrateLegacyCredentials() {
+        let username;
+        let encryptedPassword;
+        let password;
+        let client;
+        let passwordDecrypted = false;
+        try {
+            username = this.homey.settings.get('user_email');
+            encryptedPassword = this.homey.settings.get('user_password');
+            if (typeof username !== 'string' || username === '' || !encryptedPassword) {
+                throw new Error('Saved Polestar authentication is incomplete');
+            }
+
+            password = await HomeyCrypt.decrypt(encryptedPassword, username);
+            passwordDecrypted = true;
+            const authenticated = await this._authenticate(username, password);
+            client = authenticated.client;
+
+            const devices = this.getDevices();
+            for (const device of devices) {
+                if (!readToken(device)) {
+                    await persistToken(device, authenticated.token);
+                }
+            }
+
+            await this._clearLegacyCredentialsIfMigrated();
+            this.homey.app.log('Migrated saved Polestar login to refreshable tokens', 'Polestar Driver', 'DEBUG');
+        } catch (err) {
+            const repairRequired = !passwordDecrypted
+                || /Invalid username or password|(?:Auth failed with status|Token exchange failed:) (400|401|403)|reusable refresh token/i.test(err && err.message);
+            if (repairRequired) {
+                try {
+                    await clearLegacySettings(this.homey.settings);
+                } catch (_) {
+                    this.homey.app.log('Could not remove rejected Polestar login settings', 'Polestar Driver', 'WARNING');
+                }
+            }
+            this.homey.app.log(
+                repairRequired
+                    ? 'Could not migrate the saved Polestar login; repair is required'
+                    : 'Could not migrate the saved Polestar login temporarily; will retry later',
+                'Polestar Driver',
+                repairRequired ? 'ERROR' : 'WARNING',
+            );
+            throw new Error(repairRequired
+                ? 'Could not migrate Polestar authentication. Repair the device to sign in again.'
+                : 'Could not migrate Polestar authentication temporarily.');
+        } finally {
+            password = null;
+            if (client && typeof client.close === 'function') client.close();
+        }
+    }
+
+    async _clearLegacyCredentialsIfMigrated() {
+        const devices = this.getDevices();
+        if (!devices.every((device) => readToken(device))
+            || !hasLegacySettings(this.homey.settings)) return false;
+        try {
+            await clearLegacySettings(this.homey.settings);
+            return true;
+        } catch (_) {
+            this.homey.app.log('Could not remove obsolete Polestar login settings; will retry later', 'Polestar Driver', 'WARNING');
+            return false;
+        }
     }
 
 }

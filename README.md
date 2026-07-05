@@ -34,8 +34,10 @@ features can be hidden per-device when unsupported.
 
 ## Configuration
 
-Pair a vehicle with your Polestar ID email and password. Homey handles OIDC
-authentication automatically; tokens refresh transparently.
+Pair a vehicle through Homey's built-in credentials screen. The app uses the
+email and password only for the initial Polestar OIDC exchange; it does not save
+either value. A refreshable app-client token is stored with each paired device
+so authentication can renew transparently.
 
 ## The `polestar-2-csv` driver
 

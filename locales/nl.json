@@ -18,13 +18,11 @@
         "settings": {
             "title": "Instellingen",
             "tabs": {
-                "account": "Rekening",
+                "account": "Voorkeuren",
                 "debug": "Debug"
             },
             "account": {
-                "title": "Accountinstellingen",
-                "email": "E-mailadres",
-                "password": "Wachtwoord",
+                "title": "Voorkeuren",
                 "saveBtn": "Opslaan",
                 "distanceUnit": "Afstandseenheid",
                 "distanceUnitKm": "Kilometers (km)",
@@ -47,7 +45,7 @@
             "loginFailed": "Inloggen mislukt. Controleer alstublieft uw e-mailadres en wachtwoord en probeer het opnieuw.",
             "alertNoCarFound": "Geen Polestar 2 gevonden in uw Polestar-account.",
             "fetchingCars": "Bezig met het ophalen van Polestar 2 vanuit uw Polestar-account...",
-            "pairInfo": "Uw Polestar-accountinformatie wordt alleen gebruikt om uw Polestar 2 te koppelen aan Homey. Uw inloggegevens worden alleen lokaal op uw Homey opgeslagen."
+            "pairInfo": "Uw e-mailadres en wachtwoord worden alleen tijdens het inloggen gebruikt en niet door de app opgeslagen."
         }
     }
 }

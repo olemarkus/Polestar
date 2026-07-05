@@ -18,13 +18,11 @@
         "settings": {
             "title": "Innstillinger",
             "tabs": {
-                "account": "Konto",
+                "account": "Innstillinger",
                 "debug": "Debug"
             },
             "account": {
-                "title": "Konto-innstillinger",
-                "email": "Epost-adresse",
-                "password": "Passord",
+                "title": "Innstillinger",
                 "saveBtn": "Lagre",
                 "distanceUnit": "Avstandsenhet",
                 "distanceUnitKm": "Kilometer (km)",
@@ -47,7 +45,7 @@
             "loginFailed": "Innlogging feilet. Vennligst sjekk epost-adresse og passord og prøv igjen.",
             "alertNoCarFound": "Fant ingen Polestar 2 på Polestar-kontoen din.",
             "fetchingCars": "Henter Polestar 2 fra Polestar-kontoen din...",
-            "pairInfo": "Din Polestar-kontoinformasjon brukes kun for å koble din Polestar 2 til Homey. Dine påloggingsdata lagres kun lokalt på din Homey."
+            "pairInfo": "E-postadressen og passordet brukes bare under innlogging og lagres ikke av appen."
         }
     },
     "Polestar2CSV": {

@@ -32,16 +32,34 @@ function toNumber(v) {
 }
 
 class PolestarCompat {
-    constructor(email, password) {
+    constructor(email = null, password = null) {
         this._client = new PolestarC3(email, password);
         this._vehicles = null;
         this._batteryCache = { at: 0, data: null };
     }
 
     async login() {
+        // Authentication + C3 endpoint discovery only. A paired device already
+        // knows its VIN, so a transient GetMyCars failure must not brick startup.
         await this._client.login();
-        this._vehicles = await this._client.listVehicles();
+        this._vehicles = null;
         return true;
+    }
+
+    restoreToken(token) {
+        this._client.restoreToken(token);
+    }
+
+    getToken() {
+        return this._client.getToken();
+    }
+
+    hasPendingTokenPersistence() {
+        return this._client.hasPendingTokenPersistence();
+    }
+
+    onTokenChanged(callback) {
+        return this._client.onTokenChanged(callback);
     }
 
     async getVehicles() {
@@ -56,10 +74,17 @@ class PolestarCompat {
     }
 
     async setVehicle(vin) {
+        // A paired device's stored VIN is authoritative. Do not rediscover the
+        // garage here: discovery may be temporarily unavailable or may no
+        // longer list a vehicle that is already paired in Homey.
+        if (vin) {
+            await this._client.setVehicle(vin);
+            return { vin, id: undefined };
+        }
+
+        // Pairing's "pick first" compatibility path still requires GetMyCars.
         if (!this._vehicles) this._vehicles = await this._client.listVehicles();
-        const match = vin
-            ? this._vehicles.find((v) => v.vin === vin)
-            : this._vehicles[0];
+        const match = this._vehicles[0];
         if (!match) throw new Error('Vehicle not found');
         await this._client.setVehicle(match.vin);
         return {
@@ -240,6 +265,7 @@ class PolestarCompat {
 
     getAccessToken() { return this._client._auth.accessToken; }
     getVehicleVin() { return this._client._vin; }
+    close() { return this._client.close(); }
 }
 
 module.exports = PolestarCompat;

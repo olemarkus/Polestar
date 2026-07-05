@@ -29,13 +29,37 @@ class AuthManager {
         this._tokens = null;
         this._authEndpoint = null;
         this._tokenEndpoint = null;
+        this._tokenChangeCallbacks = new Set();
+        this._refreshPromise = null;
+        this._pendingTokens = null;
+        this._persistencePromise = null;
     }
 
-    get accessToken() { return this._tokens ? this._tokens.access_token : null; }
+    get accessToken() { return this._tokens ? this._tokens.accessToken : null; }
     get isExpired() {
         if (!this._tokens) return true;
-        if (!this._tokens.expires_at) return false;
-        return Date.now() > this._tokens.expires_at - 60_000;
+        return Date.now() >= this._tokens.expiresAt - 60_000;
+    }
+
+    restoreToken(token) {
+        this._tokens = this._validateToken(token);
+        this._pendingTokens = null;
+    }
+
+    getToken() {
+        return this._tokens ? { ...this._tokens } : null;
+    }
+
+    hasPendingTokenPersistence() {
+        return this._pendingTokens !== null;
+    }
+
+    onTokenChanged(callback) {
+        if (typeof callback !== 'function') {
+            throw new TypeError('Token change callback must be a function');
+        }
+        this._tokenChangeCallbacks.add(callback);
+        return () => this._tokenChangeCallbacks.delete(callback);
     }
 
     async _discover() {
@@ -46,26 +70,29 @@ class AuthManager {
     }
 
     async authenticate(email, password) {
-        this._email = email;
-        this._password = password;
         await this._discover();
         await this._fullAuth(email, password);
     }
 
     async ensureValidToken() {
+        await this._persistPendingTokens();
         if (!this._tokens) throw new Error('Not authenticated');
         if (this.isExpired) {
-            if (this._tokens.refresh_token) {
-                try { await this._refresh(); return this._tokens.access_token; }
-                catch (_) { /* fall through */ }
+            if (!this._tokens.refreshToken) {
+                throw new Error('Token expired and no refresh token is available; repair is required');
             }
-            if (this._email && this._password) {
-                await this._fullAuth(this._email, this._password);
-            } else {
-                throw new Error('Token expired and no credentials available');
+            if (!this._refreshPromise) {
+                this._refreshPromise = (async () => {
+                    try {
+                        await this._refresh();
+                    } finally {
+                        this._refreshPromise = null;
+                    }
+                })();
             }
+            await this._refreshPromise;
         }
-        return this._tokens.access_token;
+        return this._tokens.accessToken;
     }
 
     async _fullAuth(email, password) {
@@ -114,15 +141,21 @@ class AuthManager {
         const resumeUrl = m[1].startsWith('http') ? m[1] : OIDC_PROVIDER + m[1];
 
         // Step 2: post credentials.
-        r = await axios.post(resumeUrl, qs.stringify({ 'pf.username': email, 'pf.pass': password }), {
-            params,
-            headers: {
-                'content-type': 'application/x-www-form-urlencoded',
-                cookie: cookieHeader(),
-            },
-            maxRedirects: 0,
-            validateStatus: () => true,
-        });
+        try {
+            r = await axios.post(resumeUrl, qs.stringify({ 'pf.username': email, 'pf.pass': password }), {
+                params,
+                headers: {
+                    'content-type': 'application/x-www-form-urlencoded',
+                    cookie: cookieHeader(),
+                },
+                maxRedirects: 0,
+                validateStatus: () => true,
+            });
+        } catch (_) {
+            // Axios errors retain request config, including the form body.
+            // Replace them so a caller cannot accidentally log the password.
+            throw new Error('Authentication request failed');
+        }
         collectCookies(r);
 
         if (r.status !== 302 && r.status !== 303) {
@@ -132,67 +165,150 @@ class AuthManager {
         }
 
         let location = r.headers.location || '';
-        let parsed = new URL(location, OIDC_PROVIDER);
+        let parsed;
+        try {
+            parsed = new URL(location, OIDC_PROVIDER);
+        } catch (_) {
+            throw new Error('Authentication returned an invalid redirect');
+        }
         let code = parsed.searchParams.get('code');
         const uid = parsed.searchParams.get('uid');
 
         // Terms & Conditions flow.
         if (!code && uid) {
-            r = await axios.post(resumeUrl, qs.stringify({ 'pf.submit': 'true', subject: uid }), {
-                params,
-                headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookieHeader() },
-                maxRedirects: 0,
-                validateStatus: () => true,
-            });
+            try {
+                r = await axios.post(resumeUrl, qs.stringify({ 'pf.submit': 'true', subject: uid }), {
+                    params,
+                    headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookieHeader() },
+                    maxRedirects: 0,
+                    validateStatus: () => true,
+                });
+            } catch (_) {
+                throw new Error('Authentication continuation request failed');
+            }
             collectCookies(r);
             if (r.status === 302 || r.status === 303) {
                 location = r.headers.location || '';
-                parsed = new URL(location, OIDC_PROVIDER);
+                try {
+                    parsed = new URL(location, OIDC_PROVIDER);
+                } catch (_) {
+                    throw new Error('Authentication returned an invalid redirect');
+                }
                 code = parsed.searchParams.get('code');
             }
         }
 
-        if (!code) throw new Error(`No auth code in redirect: ${location}`);
+        if (!code) throw new Error('Authentication did not return an authorization code');
         return code;
     }
 
     async _exchange(code, verifier) {
-        const r = await axios.post(this._tokenEndpoint, qs.stringify({
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: REDIRECT_URI,
-            client_id: CLIENT_ID,
-            code_verifier: verifier,
-        }), {
-            headers: { 'content-type': 'application/x-www-form-urlencoded' },
-            validateStatus: () => true,
-            timeout: 30000,
-        });
-        if (r.status !== 200) throw new Error(`Token exchange failed: ${r.status} ${JSON.stringify(r.data)}`);
-        this._storeTokens(r.data);
+        let r;
+        try {
+            r = await axios.post(this._tokenEndpoint, qs.stringify({
+                grant_type: 'authorization_code',
+                code,
+                redirect_uri: REDIRECT_URI,
+                client_id: CLIENT_ID,
+                code_verifier: verifier,
+            }), {
+                headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                validateStatus: () => true,
+                timeout: 30000,
+            });
+        } catch (_) {
+            throw new Error('Token exchange request failed');
+        }
+        if (r.status !== 200) throw new Error(`Token exchange failed: ${r.status}`);
+        await this._storeTokens(r.data);
     }
 
     async _refresh() {
-        const r = await axios.post(this._tokenEndpoint, qs.stringify({
-            grant_type: 'refresh_token',
-            refresh_token: this._tokens.refresh_token,
-            client_id: CLIENT_ID,
-        }), {
-            headers: { 'content-type': 'application/x-www-form-urlencoded' },
-            validateStatus: () => true,
-            timeout: 30000,
-        });
+        // A restored token has not gone through password authentication, so
+        // endpoint discovery may not have run in this process yet.
+        await this._discover();
+        let r;
+        try {
+            r = await axios.post(this._tokenEndpoint, qs.stringify({
+                grant_type: 'refresh_token',
+                refresh_token: this._tokens.refreshToken,
+                client_id: CLIENT_ID,
+            }), {
+                headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                validateStatus: () => true,
+                timeout: 30000,
+            });
+        } catch (_) {
+            throw new Error('Token refresh request failed');
+        }
         if (r.status !== 200) throw new Error(`Refresh failed: ${r.status}`);
-        this._storeTokens(r.data);
+        await this._storeTokens(r.data);
     }
 
-    _storeTokens(data) {
-        this._tokens = {
-            access_token: data.access_token,
-            refresh_token: data.refresh_token || (this._tokens && this._tokens.refresh_token) || null,
-            token_type: data.token_type || 'Bearer',
-            expires_in: data.expires_in || 0,
-            expires_at: data.expires_in ? Date.now() + data.expires_in * 1000 : 0,
+    async _storeTokens(data) {
+        const accessToken = data && data.access_token;
+        const expiresIn = Number(data && data.expires_in);
+        if (typeof accessToken !== 'string' || accessToken.trim() === '') {
+            throw new Error('Token response did not include an access token');
+        }
+        if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+            throw new Error('Token response did not include a valid expiry');
+        }
+
+        const replacementRefreshToken = data && data.refresh_token;
+        const refreshToken = typeof replacementRefreshToken === 'string' && replacementRefreshToken.trim() !== ''
+            ? replacementRefreshToken
+            : (this._tokens && this._tokens.refreshToken);
+        if (typeof refreshToken !== 'string' || refreshToken.trim() === '') {
+            throw new Error('Token response did not include a refresh token');
+        }
+
+        this._pendingTokens = this._validateToken({
+            accessToken,
+            refreshToken,
+            expiresAt: Date.now() + expiresIn * 1000,
+        });
+        await this._persistPendingTokens();
+    }
+
+    async _persistPendingTokens() {
+        if (!this._pendingTokens) return;
+        if (!this._persistencePromise) {
+            this._persistencePromise = (async () => {
+                const pending = this._pendingTokens;
+
+                // Persistence callbacks are awaited before the token becomes
+                // usable. A failed device-store write remains pending and is
+                // retried on the next token check.
+                for (const callback of [...this._tokenChangeCallbacks]) {
+                    await callback({ ...pending });
+                }
+                this._tokens = pending;
+                if (this._pendingTokens === pending) this._pendingTokens = null;
+            })().finally(() => {
+                this._persistencePromise = null;
+            });
+        }
+        await this._persistencePromise;
+    }
+
+    _validateToken(token) {
+        if (!token || typeof token !== 'object' || Array.isArray(token)) {
+            throw new TypeError('Token must be an object');
+        }
+        if (typeof token.accessToken !== 'string' || token.accessToken.trim() === '') {
+            throw new TypeError('Token accessToken must be a non-empty string');
+        }
+        if (typeof token.refreshToken !== 'string' || token.refreshToken.trim() === '') {
+            throw new TypeError('Token refreshToken must be a non-empty string');
+        }
+        if (typeof token.expiresAt !== 'number' || !Number.isFinite(token.expiresAt) || token.expiresAt <= 0) {
+            throw new TypeError('Token expiresAt must be a positive finite number');
+        }
+        return {
+            accessToken: token.accessToken,
+            refreshToken: token.refreshToken,
+            expiresAt: token.expiresAt,
         };
     }
 }

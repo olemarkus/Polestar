@@ -18,13 +18,11 @@
         "settings": {
             "title": "Settings",
             "tabs": {
-                "account": "Account",
+                "account": "Preferences",
                 "debug": "Debug"
             },
             "account": {
-                "title": "Account settings",
-                "email": "Email address",
-                "password": "Password",
+                "title": "Preferences",
                 "saveBtn": "Save",
                 "distanceUnit": "Distance unit",
                 "distanceUnitKm": "Kilometers (km)",
@@ -47,7 +45,7 @@
             "loginFailed": "Login failed. Please check your email address and password and try again.",
             "alertNoCarFound": "No Polestar 2 found on your Polestar account.",
             "fetchingCars": "Fetching Polestar 2 from your Polestar account...",
-            "pairInfo": "Your Polestar account information is only used to connect your Polestar 2 to Homey. Your login data is only stored locally on your Homey."
+            "pairInfo": "Your email and password are used only while signing in and are not saved by the app."
         }
     }
 }

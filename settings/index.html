@@ -140,15 +140,6 @@
 			</header>
 			<form>
 				<div class="homey-form-group">
-					<label class="homey-form-label" for="email" data-i18n="Polestar2.settings.account.email"></label>
-					<input class="homey-form-input" id="email" type="text" value="" />
-				</div>
-				<div class="homey-form-group">
-					<label class="homey-form-label" for="password"
-						data-i18n="Polestar2.settings.account.password"></label>
-					<input class="homey-form-input" id="password" type="password" value="" />
-				</div>
-				<div class="homey-form-group">
 					<label class="homey-form-label" for="distanceUnit"
 						data-i18n="Polestar2.settings.account.distanceUnit"></label>
 					<select class="homey-form-input" id="distanceUnit">
@@ -292,20 +283,8 @@
 			addLogEntry(item.registered, item.severity, item.message, item.data);
 		});
 
-		var emailElement = document.getElementById("email");
-		var passwordElement = document.getElementById("password");
 		var distanceUnitElement = document.getElementById("distanceUnit");
 		var saveElement = document.getElementById("save");
-
-		Homey.get("user_email", function (err, username) {
-			if (err) return Homey.alert(err);
-			emailElement.value = username;
-		});
-
-		Homey.get("user_password", function (err, password) {
-			if (err) return Homey.alert(err);
-			passwordElement.value = password;
-		});
 
 		Homey.get("distance_unit", function (err, distanceUnit) {
 			if (err) return Homey.alert(err);
@@ -315,12 +294,6 @@
 		saveElement.addEventListener("click", function (e) {
 			e.preventDefault();
 
-			Homey.set("user_email", emailElement.value, function (err) {
-				if (err) return Homey.alert(err);
-			});
-			Homey.set("user_password", passwordElement.value, function (err) {
-				if (err) return Homey.alert(err);
-			});
 			Homey.set("distance_unit", distanceUnitElement.value, function (err) {
 				if (err) return Homey.alert(err);
 			});

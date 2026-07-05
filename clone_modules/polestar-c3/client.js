@@ -57,7 +57,7 @@ const CHARGE_TARGET_LONG_TRIP = 2;
 const CHARGE_TARGET_CUSTOM = 3;
 
 class PolestarC3 {
-    constructor(email, password) {
+    constructor(email = null, password = null) {
         this._auth = new AuthManager();
         this._email = email;
         this._password = password;
@@ -67,8 +67,44 @@ class PolestarC3 {
     }
 
     async login() {
-        await this._auth.authenticate(this._email, this._password);
-        this._endpoint = await discoverC3Endpoint(this._auth.accessToken);
+        const email = this._email;
+        const password = this._password;
+        const hasCredentials = email !== null || password !== null;
+
+        // Credentials are a one-time pairing/repair input. Clear references
+        // before doing network work so neither refresh nor a later login can
+        // silently fall back to the password.
+        this._email = null;
+        this._password = null;
+
+        let accessToken;
+        if (hasCredentials) {
+            if (typeof email !== 'string' || email.trim() === ''
+                || typeof password !== 'string' || password === '') {
+                throw new Error('Both email and password are required for authentication');
+            }
+            await this._auth.authenticate(email, password);
+            accessToken = this._auth.accessToken;
+        } else {
+            accessToken = await this._auth.ensureValidToken();
+        }
+        this._endpoint = await discoverC3Endpoint(accessToken);
+    }
+
+    restoreToken(token) {
+        this._auth.restoreToken(token);
+    }
+
+    getToken() {
+        return this._auth.getToken();
+    }
+
+    hasPendingTokenPersistence() {
+        return this._auth.hasPendingTokenPersistence();
+    }
+
+    onTokenChanged(callback) {
+        return this._auth.onTokenChanged(callback);
     }
 
     async listVehicles() {
