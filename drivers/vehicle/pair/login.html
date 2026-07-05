@@ -25,51 +25,59 @@
 </form>
 
 <script type="text/javascript">
-	$(document).ready(function() {
-        const loginForm = $('#loginForm');
-		const usernameElement = $('#username');
-		const passwordElement = $('#password');
-		const saveElement = $('#save');
+	// Vanilla JS — do NOT rely on a global jQuery ($). Recent Homey firmware no
+	// longer injects jQuery into pair webviews, so `$(document).ready(...)` threw
+	// a silent ReferenceError here, leaving the Login button dead and emitting
+	// nothing to the driver (pairing appeared to hang / return no vehicles).
+	(function () {
+		function byId(id) { return document.getElementById(id); }
+		try {
+			var form = byId('loginForm');
+			var usernameEl = byId('username');
+			var passwordEl = byId('password');
 
-		loginForm.submit(function(e) {
-			e.preventDefault();
-
-			Homey.showLoadingOverlay();
-			Homey.emit('testlogin', {
-				'username': usernameElement.val(),
-				'password': passwordElement.val()
-			}).then(async function(result) {
-				// Backwards compat: older driver returned a plain boolean.
-				const ok = result === true || (result && result.ok === true);
-				const reason = result && result.reason;
-				if (ok) {
-					await Homey.emit('discover_vehicles').then(function(result) {
-						if (result) {
-							Homey.hideLoadingOverlay();
-							Homey.nextView();
-						}
-					});
-					return;
-				}
-				Homey.hideLoadingOverlay();
-				if (reason === 'no_vehicles') {
-					Homey.alert("Login succeeded but no vehicles were returned for this account. Are you signed in with the right Polestar ID? Try again in a minute — Polestar's backend can briefly return an empty list.");
-				} else {
-					Homey.alert("Login validation failed — check your e-mail address and password and try again.");
+			Homey.on('loadaccount', function (credentials) {
+				if (credentials) {
+					usernameEl.value = credentials.username || '';
+					passwordEl.value = credentials.password || '';
 				}
 			});
-		});
 
-		Homey.on('loadaccount', function(credentials, callback) {
-			usernameElement.val(credentials.username);
-			passwordElement.val(credentials.password);
-		});
+			Homey.on('noVehiclesFound', function (message) {
+				Homey.alert(message);
+				return Homey.done();
+			});
 
-		Homey.on('noVehiclesFound', function(message) {
-			Homey.alert(message);
-			return Homey.done();
-		});
-	});
+			form.addEventListener('submit', function (e) {
+				e.preventDefault();
+				Homey.showLoadingOverlay();
+				Homey.emit('testlogin', {
+					username: usernameEl.value,
+					password: passwordEl.value
+				}).then(function (result) {
+					// Backwards compat: older driver returned a plain boolean.
+					var ok = result === true || (result && result.ok === true);
+					var reason = result && result.reason;
+					if (ok) {
+						return Homey.emit('discover_vehicles').then(function (r) {
+							Homey.hideLoadingOverlay();
+							if (r) { Homey.nextView(); }
+						});
+					}
+					Homey.hideLoadingOverlay();
+					if (reason === 'no_vehicles') {
+						Homey.alert("Login succeeded, but no vehicles were returned for this account. This usually means the Polestar ID is a guest / secondary driver rather than the car's owner (primary driver), the car is registered to a lease company, or you're signed in with the wrong Polestar ID. It can also be a brief Polestar backend hiccup — try again in a minute.");
+					} else {
+						Homey.alert("Login validation failed — check your e-mail address and password and try again.");
+					}
+				}).catch(function (err) {
+					Homey.hideLoadingOverlay();
+					Homey.alert("Something went wrong talking to the app: " + (err && err.message ? err.message : err));
+				});
+			});
+		} catch (err) {
+			// A synchronous failure here would otherwise be invisible in the webview.
+			try { Homey.alert("Pairing screen failed to initialise: " + (err && err.message ? err.message : err)); } catch (e) { /* noop */ }
+		}
+	})();
 </script>
-
-</body>
