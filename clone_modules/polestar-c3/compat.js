@@ -39,8 +39,14 @@ class PolestarCompat {
     }
 
     async login() {
+        // Authentication + C3 endpoint discovery only. Deliberately does NOT
+        // fetch the garage (GetMyCars): a paired device already knows its VIN,
+        // and a transient discovery outage must not fail login and brick the
+        // device. The vehicle list is fetched lazily by getVehicles()/pairing.
         await this._client.login();
-        this._vehicles = await this._client.listVehicles();
+        // A later explicit pairing/discovery request must not reuse a garage
+        // cached before this login (for example after credentials changed).
+        this._vehicles = null;
         return true;
     }
 
@@ -56,10 +62,16 @@ class PolestarCompat {
     }
 
     async setVehicle(vin) {
+        // Paired device: it stores its own VIN, so select it directly. Never
+        // fetch GetMyCars here: a discovery outage (or an ownership/linking
+        // change) must not brick an already-paired device at startup.
+        if (vin) {
+            await this._client.setVehicle(vin);
+            return { vin, id: undefined };
+        }
+        // Pairing "pick first" path still needs the discovered list.
         if (!this._vehicles) this._vehicles = await this._client.listVehicles();
-        const match = vin
-            ? this._vehicles.find((v) => v.vin === vin)
-            : this._vehicles[0];
+        const match = this._vehicles[0];
         if (!match) throw new Error('Vehicle not found');
         await this._client.setVehicle(match.vin);
         return {
