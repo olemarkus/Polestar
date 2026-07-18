@@ -4,6 +4,8 @@ const { Driver } = require('homey');
 const LegacyPolestar = require('../../clone_modules/polestar.js');
 const PolestarC3Compat = require('../../clone_modules/polestar-c3/compat');
 const HomeyCrypt = require('../../lib/homeycrypt')
+const logVehicleCount = require('../../lib/vehicle-log');
+const formatVehicleName = require('../../lib/vehicle-name');
 
 function Polestar(email, password, homey) {
     const legacy = homey && homey.settings.get('c3_backend_disabled') === true;
@@ -132,7 +134,7 @@ class Vehicle extends Driver {
                 var polestar = Polestar(data.username, data.password, this.homey);
                 await polestar.login();
                 var testresult = await polestar.getVehicles();
-                this.homey.app.log('Credential test ok:', 'Polestar Driver', 'DEBUG', testresult);
+                logVehicleCount(this.homey, 'Credential test ok, vehicle count', testresult);
                 if (!testresult || testresult.length === 0) {
                     const legacy = await this._tryLegacyFallback(data.username, data.password);
                     if (legacy.ok) {
@@ -207,7 +209,7 @@ class Vehicle extends Driver {
                             this.homey.app.log(`Located vehicle ${bev.content.model.name} — linked:${linked} owner:${owner}`, 'Polestar Driver');
                             let device = {
                                 id: bev.vin,
-                                name: bev.content.model.name + ' (' + bev.registrationNo + ')',
+                                name: formatVehicleName(bev.content.model.name, bev.registrationNo, bev.vin),
                                 data: {
                                     vin: bev.vin,
                                     registration: bev.registrationNo,
@@ -232,7 +234,7 @@ class Vehicle extends Driver {
                     return await session.emit('noVehiclesFound', 'No vehicles found, please try again.');
                 }
 
-                this.homey.app.log('Vehicles ready to be added:', 'Polestar Driver', 'DEBUG', vehicles);
+                logVehicleCount(this.homey, 'Vehicles ready to be added', vehicles);
                 mydevices = vehicles;
                 await session.showView('list_devices');
             } catch (err) {
@@ -263,7 +265,7 @@ class Vehicle extends Driver {
                 this.homey.app.log('Retrieve vehicles failed:', 'Polestar Driver', 'ERROR', err);
                 return { ok: false, reason: 'login_failed' };
             }
-            this.homey.app.log('Credential test ok, vehicle count:', 'Polestar Driver', 'DEBUG', (vehicles || []).length);
+            logVehicleCount(this.homey, 'Credential test ok, vehicle count', vehicles);
             if (!vehicles || vehicles.length === 0) {
                 // C3 backend doesn't list some older Polestar 2 cars (2021-ish).
                 // Try the legacy backend before giving up — and if it finds

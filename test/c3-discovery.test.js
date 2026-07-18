@@ -5,9 +5,11 @@ const test = require('node:test');
 
 const { PolestarC3 } = require('../clone_modules/polestar-c3/client');
 
+const TEST_VIN = 'test-vin';
+
 // GetMyCarsResponse with one synthetic linked, non-owner Polestar 3.
 const GET_MY_CARS_RESPONSE = Buffer.from(
-    '0a300a2a0a1159534d30303030303030303030303030312a03333539320a506f6c657374617220333a043230323510011800',
+    '0a270a210a08746573742d76696e2a03333539320a506f6c657374617220333a043230323510011800',
     'hex',
 );
 
@@ -20,7 +22,7 @@ test('listVehicles uses C3 GetMyCars for a linked non-owner car', async () => {
     };
 
     assert.deepEqual(await client.listVehicles(), [{
-        vin: 'YSM00000000000001',
+        vin: TEST_VIN,
         registrationNo: null,
         modelYear: '2025',
         userIsLinked: true,
