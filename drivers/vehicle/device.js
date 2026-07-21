@@ -3,6 +3,7 @@
 const { Device } = require('homey');
 const LegacyPolestar = require('../../clone_modules/polestar.js');
 const PolestarC3Compat = require('../../clone_modules/polestar-c3/compat');
+const { transitionPreconditioningState } = require('../../clone_modules/polestar-c3/preconditioning');
 const HomeyCrypt = require('../../lib/homeycrypt')
 const EvChargingState = require('../../lib/evChargingState')
 
@@ -10,6 +11,7 @@ const measureInterval = 60000;
 const KM_TO_MILES = 0.621371;
 const DEFAULT_HOME_RADIUS_M = 150;
 const EARTH_RADIUS_M = 6371000;
+const BATTERY_PRECONDITIONING_STATUS_CAPABILITY = 'measure_polestarBatteryPreconditioningStatus';
 
 // Haversine great-circle distance in meters. Inlined so we don't pull in
 // geolib just for one call. Accurate to sub-meter at driveway scale.
@@ -473,6 +475,8 @@ class PolestarVehicle extends Device {
             var batteryInfo = await this.polestar.getBattery();
             this.homey.app.log('Battery:', 'PolestarVehicle', 'DEBUG', batteryInfo);
 
+            await this._updateBatteryPreconditioningState(batteryInfo);
+
             const batterySoc = Math.floor(batteryInfo.batteryChargeLevelPercentage);
             this.setCapabilityValue('measure_battery', batterySoc);
             // Deprecated duplicate — only present on devices paired before it was
@@ -587,6 +591,42 @@ class PolestarVehicle extends Device {
             await card.trigger(this, {}, {});
         } catch (err) {
             this.homey.app.log(`Trigger ${newValue ? trueCardKey : falseCardKey} failed for ${capId}`, this.name, 'ERROR', err.message);
+        }
+    }
+
+    async _updateBatteryPreconditioningState(batteryInfo) {
+        const reported = batteryInfo.batteryPreconditioningReported === true;
+        if (!reported) return;
+
+        const key = batteryInfo.batteryPreconditioningStatusKey || 'unknown';
+        const label = batteryInfo.batteryPreconditioningStatusLabel || 'Unknown';
+        const previous = this.hasCapability(BATTERY_PRECONDITIONING_STATUS_CAPABILITY)
+            ? this.getCapabilityValue(BATTERY_PRECONDITIONING_STATUS_CAPABILITY)
+            : null;
+        const transition = transitionPreconditioningState(previous, key);
+
+        // Add the status capability only after this vehicle has actually
+        // reported C3 field 29. Flow-card filters then keep these cards hidden
+        // for legacy-backend and unsupported vehicles. The enum key is the
+        // persisted source of truth used by the condition card after restarts.
+        try {
+            if (!this.hasCapability(BATTERY_PRECONDITIONING_STATUS_CAPABILITY)) {
+                await this.addCapability(BATTERY_PRECONDITIONING_STATUS_CAPABILITY);
+            }
+            await this.setCapabilityValue(BATTERY_PRECONDITIONING_STATUS_CAPABILITY, key);
+        } catch (err) {
+            this.homey.app.log('Failed to expose battery preconditioning status', this.name, 'WARNING', err);
+            return;
+        }
+
+        if (!transition.changed) return;
+
+        const card = this.homey.flow.getDeviceTriggerCard('battery_preconditioning_changed');
+        if (!card) return;
+        try {
+            await card.trigger(this, { state: label }, {});
+        } catch (err) {
+            this.homey.app.log('Battery preconditioning state trigger failed', this.name, 'ERROR', err);
         }
     }
 
