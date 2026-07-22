@@ -111,16 +111,27 @@ class PolestarC3 {
         return session;
     }
 
-    async _call(method, requestBytes, { debug = false, streaming = false, retries = 1 } = {}) {
+    async _call(method, requestBytes, {
+        debug = false,
+        streaming = false,
+        streamUntil = null,
+        timeoutMs = null,
+        retries = 1,
+    } = {}) {
         let lastErr = null;
         for (let attempt = 0; attempt <= retries; attempt++) {
             const token = await this._auth.ensureValidToken();
             const session = this._ensureSession();
             const metadata = { authorization: `Bearer ${token}` };
             if (this._vin) metadata.vin = this._vin;
-            const fn = streaming ? grpc.serverStreamFirst : grpc.unaryUnary;
+            const fn = streamUntil
+                ? grpc.serverStreamUntil
+                : (streaming ? grpc.serverStreamFirst : grpc.unaryUnary);
             try {
-                return await fn(session, method, requestBytes, metadata, { debug });
+                const options = { debug };
+                if (streamUntil) options.isTerminal = streamUntil;
+                if (timeoutMs != null) options.timeoutMs = timeoutMs;
+                return await fn(session, method, requestBytes, metadata, options);
             } catch (err) {
                 lastErr = err;
                 const msg = err.message || '';
@@ -210,21 +221,29 @@ class PolestarC3 {
         const r = env.response || {};
         const statusLabel = InvocationStatus[r.status] || null;
         return {
-            id: r.id || null,
-            vin: r.vin || null,
             status: typeof r.status === 'number' ? r.status : null,
             statusLabel,
             message: r.message || null,
             timestamp: typeof r.timestamp === 'bigint' ? Number(r.timestamp) : (r.timestamp || null),
-            ok: r.status === 1 || r.status === 4 || r.status === 6, // SENT / DELIVERED / SUCCESS
+            ok: r.status === 6,
         };
     }
 
     async _invocationCall(method, requestBytes, { debug = false } = {}) {
-        // Invocation methods are server-streaming; we take the first delivered
-        // response (often SENT or DELIVERED — the car processes the command
-        // regardless of whether we hang around for the final SUCCESS).
-        const respBytes = await this._call(`${SVC_INVOCATION}/${method}`, requestBytes, { debug, streaming: true });
+        // SENT and DELIVERED are acknowledgements, not proof the car completed
+        // the command. Keep the server stream open until any terminal status.
+        const terminal = (frame) => {
+            const status = this._parseInvocationResponse(frame).status;
+            return status !== 1 && status !== 4;
+        };
+        const respBytes = await this._call(`${SVC_INVOCATION}/${method}`, requestBytes, {
+            debug,
+            streamUntil: terminal,
+            timeoutMs: 45000,
+            // A timeout is an unknown outcome. Retrying a physical command can
+            // duplicate an action that the car already performed.
+            retries: 0,
+        });
         const parsed = this._parseInvocationResponse(respBytes);
         if (!parsed.ok) {
             throw new Error(`Invocation ${method} failed: status=${parsed.status} (${parsed.statusLabel}) ${parsed.message || ''}`.trim());

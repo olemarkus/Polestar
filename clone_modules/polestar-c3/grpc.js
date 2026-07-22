@@ -41,10 +41,10 @@ const GRPC_STATUS_NAMES = {
 };
 
 function sanitizeHeaders(h) {
+    const safeKeys = new Set([':status', 'content-type', 'grpc-status', 'grpc-encoding', 'grpc-accept-encoding']);
     const out = {};
     for (const [k, v] of Object.entries(h || {})) {
-        if (k === 'authorization') { out[k] = '[redacted]'; continue; }
-        out[k] = v;
+        out[k] = safeKeys.has(k.toLowerCase()) ? v : '[redacted]';
     }
     return out;
 }
@@ -129,6 +129,26 @@ function unaryUnary(session, method, requestBytes, metadata = {}, { timeoutMs = 
 }
 
 function serverStreamFirst(session, method, requestBytes, metadata = {}, { timeoutMs = 20000, debug = false } = {}) {
+    return serverStreamUntil(session, method, requestBytes, metadata, {
+        timeoutMs,
+        debug,
+        isTerminal: () => true,
+    });
+}
+
+/**
+ * Read a server stream until a caller-selected frame arrives. Invocation RPCs
+ * use this to wait past transport acknowledgements for a terminal car result.
+ */
+function serverStreamUntil(session, method, requestBytes, metadata = {}, {
+    timeoutMs = 45000,
+    debug = false,
+    isTerminal,
+} = {}) {
+    if (typeof isTerminal !== 'function') {
+        return Promise.reject(new Error('serverStreamUntil requires an isTerminal callback'));
+    }
+
     return new Promise((resolve, reject) => {
         const headers = {
             ':method': 'POST',
@@ -142,10 +162,8 @@ function serverStreamFirst(session, method, requestBytes, metadata = {}, { timeo
         };
 
         const req = session.request(headers, { endStream: false });
-        let respHeaders = null;
         let buffered = Buffer.alloc(0);
         let settled = false;
-        let timedOut = false;
 
         const finish = (fn, arg) => {
             if (settled) return;
@@ -156,19 +174,18 @@ function serverStreamFirst(session, method, requestBytes, metadata = {}, { timeo
         };
 
         const timer = setTimeout(() => {
-            timedOut = true;
-            finish(reject, new Error(`gRPC ${method} timeout after ${timeoutMs}ms`));
+            finish(reject, new Error(
+                `gRPC ${method} timeout waiting for terminal stream response after ${timeoutMs}ms`,
+            ));
         }, timeoutMs);
 
         req.on('response', (h) => {
-            respHeaders = h;
             if (debug) console.error('[grpc response headers]', sanitizeHeaders(h));
-            if (h['grpc-status'] !== undefined) {
-                const s = Number(h['grpc-status']);
-                if (s !== 0) {
-                    const msg = h['grpc-message'] || GRPC_STATUS_NAMES[s] || 'unknown';
-                    finish(reject, new Error(`gRPC ${method} trailers-only: status=${s} (${GRPC_STATUS_NAMES[s] || '?'}) message="${msg}"`));
-                }
+            if (h['grpc-status'] !== undefined && Number(h['grpc-status']) !== 0) {
+                const status = Number(h['grpc-status']);
+                finish(reject, new Error(
+                    `gRPC ${method} trailers-only: status=${status} (${GRPC_STATUS_NAMES[status] || '?'})`,
+                ));
             } else if (Number(h[':status']) !== 200) {
                 finish(reject, new Error(`gRPC ${method} HTTP ${h[':status']}`));
             }
@@ -177,33 +194,59 @@ function serverStreamFirst(session, method, requestBytes, metadata = {}, { timeo
         req.on('data', (chunk) => {
             if (settled) return;
             buffered = Buffer.concat([buffered, chunk]);
-            // Try to parse the first complete frame.
-            if (buffered.length < 5) return;
-            const len = buffered.readUInt32BE(1);
-            if (buffered.length < 5 + len) return;
-            const frame = buffered.slice(5, 5 + len);
-            finish(resolve, frame);
+
+            while (buffered.length >= 5) {
+                const compressed = buffered[0];
+                const length = buffered.readUInt32BE(1);
+                if (buffered.length < 5 + length) return;
+                if (compressed !== 0) {
+                    finish(reject, new Error(`gRPC ${method} returned a compressed stream frame`));
+                    return;
+                }
+
+                const frame = buffered.slice(5, 5 + length);
+                buffered = buffered.slice(5 + length);
+                let terminal;
+                try {
+                    terminal = isTerminal(frame);
+                } catch (err) {
+                    finish(reject, err);
+                    return;
+                }
+                if (terminal) {
+                    finish(resolve, frame);
+                    return;
+                }
+            }
         });
 
-        req.on('trailers', (t) => {
+        req.on('trailers', (trailers) => {
             if (settled) return;
-            if (debug) console.error('[grpc trailers]', t);
-            const s = t['grpc-status'];
-            if (s !== undefined && Number(s) !== 0) {
-                const msg = t['grpc-message'] || GRPC_STATUS_NAMES[Number(s)] || 'unknown';
-                finish(reject, new Error(`gRPC ${method} status=${s} (${GRPC_STATUS_NAMES[Number(s)] || '?'}) message="${msg}"`));
+            if (debug) console.error('[grpc trailers]', sanitizeHeaders(trailers));
+            const status = trailers['grpc-status'];
+            if (status !== undefined && Number(status) !== 0) {
+                finish(reject, new Error(
+                    `gRPC ${method} status=${status} (${GRPC_STATUS_NAMES[Number(status)] || '?'})`,
+                ));
             }
         });
 
         req.on('end', () => {
-            if (settled || timedOut) return;
-            finish(reject, new Error(`gRPC ${method} stream ended without any message frames`));
+            if (!settled) {
+                finish(reject, new Error(`gRPC ${method} stream ended before a terminal response`));
+            }
         });
-
         req.on('error', (err) => finish(reject, err));
 
         req.end(frameMessage(requestBytes));
     });
 }
 
-module.exports = { connect, unaryUnary, serverStreamFirst, frameMessage, parseFrames };
+module.exports = {
+    connect,
+    unaryUnary,
+    serverStreamFirst,
+    serverStreamUntil,
+    frameMessage,
+    parseFrames,
+};
