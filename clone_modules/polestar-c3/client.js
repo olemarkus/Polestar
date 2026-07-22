@@ -98,7 +98,7 @@ class PolestarC3 {
             try {
                 session.ping((err) => {
                     if (err) {
-                        console.warn('[polestar-c3] ping failed, destroying session:', err.message);
+                        console.warn('[polestar-c3] ping failed, destroying session');
                         if (this._session === session) this._session = null;
                         try { session.destroy(); } catch (_) {}
                     }
@@ -126,7 +126,7 @@ class PolestarC3 {
                 const msg = err.message || '';
                 const transient = /\bstatus=(13|14)\b|GOAWAY|goaway|ECONNRESET|EPIPE|ETIMEDOUT|NGHTTP2_/i.test(msg);
                 if (attempt < retries && transient) {
-                    console.warn(`[polestar-c3] transient error on ${method}, retrying (${msg})`);
+                    console.warn(`[polestar-c3] transient error on ${method}, retrying`);
                     this._session = null;
                     continue;
                 }
@@ -393,15 +393,9 @@ class PolestarC3 {
         if (!this._vin) throw new Error('No vehicle selected');
         const req = wrapChronos(this._vin, innerPayload);
         if (debug || process.env.POLESTAR_DUMP_REQUESTS === '1') {
-            console.log(`[polestar-c3 dump] ${method} REQUEST size=${req.length} hex=${req.toString('hex')}`);
-            try {
-                const raw = codec.decodeRaw(req);
-                const summary = {};
-                for (const [k, v] of Object.entries(raw)) {
-                    summary[k] = Buffer.isBuffer(v) ? `<${v.length}B hex=${v.toString('hex')}>` : v;
-                }
-                console.log(`[polestar-c3 dump] ${method} REQUEST decoded:`, summary);
-            } catch (_) {}
+            // Chronos envelopes contain the complete VIN. Log only metadata;
+            // raw or decoded protobuf payloads must never reach the console.
+            console.log(`[polestar-c3 dump] ${method} REQUEST size=${req.length}`);
         }
         return this._call(method, req, { streaming, debug });
     }
@@ -452,35 +446,6 @@ class PolestarC3 {
         }, { amp_limit: amperage });
         const resp = await this._chronosCall(`${SVC_AMP_LIMIT}/SetAmpLimit`, inner, { debug });
         return this._parseIntegerField(resp, 1);
-    }
-
-    /** Best-effort dump of a chronos response so we can see what the server
-     *  actually sent back without writing proto schemas for every response type. */
-    _debugDumpChronos(label, respBytes) {
-        try {
-            const raw = codec.decodeRaw(respBytes);
-            const summarize = (obj) => {
-                const out = {};
-                for (const [k, v] of Object.entries(obj)) {
-                    out[k] = Buffer.isBuffer(v) ? `<${v.length}B hex=${v.toString('hex')}>` : v;
-                }
-                return out;
-            };
-            console.log(`[polestar-c3 dump] ${label} size=${respBytes.length}:`, summarize(raw));
-            // Recursively decode any nested messages (length-delimited with wt=2).
-            for (const [key, val] of Object.entries(raw)) {
-                if (Buffer.isBuffer(val)) {
-                    try {
-                        const inner = codec.decodeRaw(val);
-                        if (Object.keys(inner).length) {
-                            console.log(`[polestar-c3 dump] ${label} ${key} nested:`, summarize(inner));
-                        }
-                    } catch (_) { /* not a valid proto message */ }
-                }
-            }
-        } catch (err) {
-            console.log(`[polestar-c3 dump] ${label} decode failed:`, err.message);
-        }
     }
 
     _parseStatusCode(respBytes) {

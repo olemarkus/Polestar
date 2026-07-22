@@ -3,6 +3,7 @@
 const { Driver } = require('homey');
 const axios = require('axios');
 const AthomCloudAPI = require('homey-api/lib/AthomCloudAPI');
+const { sanitizeString } = require('../../lib/log-sanitizer');
 
 class PolestarBetaDriver extends Driver {
     async onInit() {
@@ -86,8 +87,7 @@ class PolestarBetaDriver extends Driver {
                 return { success: true };
             } catch (error) {
                 this.homey.app.log(this.homey.__({ en: 'Failed to create webhook', no: 'Klarte ikke å opprette webhook' }), 'Polestar Driver CSV ᴮᴱᵀᴬ', 'ERROR');
-                this.log(error.message);
-                return { success: false, error: error.message };
+                return { success: false, error: sanitizeString(error.message) };
             }
         });
 

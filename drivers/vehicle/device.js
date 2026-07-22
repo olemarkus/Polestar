@@ -40,11 +40,12 @@ function isUnimplementedError(err) {
 /** Convert a raw gRPC error into a message Homey can surface usefully. */
 function friendlyGrpcError(message, label) {
     if (!message) return `${label} failed`;
-    const m = /status=(\d+)[^m]*message="([^"]*)"/.exec(message);
-    if (!m) return message;
-    const code = Number(m[1]);
-    const detail = m[2];
-    if (code === 12) return `${label}: not supported for this vehicle (${detail})`;
+    const statusMatch = /status=(\d+)/.exec(message);
+    if (!statusMatch) return message;
+    const detailMatch = /message="([^"]*)"/.exec(message);
+    const code = Number(statusMatch[1]);
+    const detail = detailMatch ? detailMatch[1] : '';
+    if (code === 12) return `${label}: not supported for this vehicle${detail ? ` (${detail})` : ''}`;
     if (code === 7)  return `${label}: permission denied (${detail || 'VIN not linked to this account'})`;
     if (code === 16) return `${label}: authentication expired — try again`;
     if (code === 14) return `${label}: service temporarily unavailable`;
@@ -1155,3 +1156,4 @@ class PolestarVehicle extends Device {
 }
 
 module.exports = PolestarVehicle;
+module.exports.friendlyGrpcError = friendlyGrpcError;

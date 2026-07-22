@@ -168,7 +168,10 @@ class AuthManager {
             validateStatus: () => true,
             timeout: 30000,
         });
-        if (r.status !== 200) throw new Error(`Token exchange failed: ${r.status} ${JSON.stringify(r.data)}`);
+        // Token endpoints can return credentials in error bodies. Keep the
+        // status, which is sufficient for diagnosis, without propagating the
+        // response payload into application logs.
+        if (r.status !== 200) throw new Error(`Token exchange failed: ${r.status}`);
         this._storeTokens(r.data);
     }
 

@@ -41,10 +41,10 @@ const GRPC_STATUS_NAMES = {
 };
 
 function sanitizeHeaders(h) {
+    const safeKeys = new Set([':status', 'content-type', 'grpc-status', 'grpc-encoding', 'grpc-accept-encoding']);
     const out = {};
     for (const [k, v] of Object.entries(h || {})) {
-        if (k === 'authorization') { out[k] = '[redacted]'; continue; }
-        out[k] = v;
+        out[k] = safeKeys.has(k.toLowerCase()) ? v : '[redacted]';
     }
     return out;
 }
@@ -86,8 +86,7 @@ function unaryUnary(session, method, requestBytes, metadata = {}, { timeoutMs = 
             if (h['grpc-status'] !== undefined) {
                 const s = Number(h['grpc-status']);
                 if (s !== 0) {
-                    const msg = h['grpc-message'] || GRPC_STATUS_NAMES[s] || 'unknown';
-                    finish(reject, new Error(`gRPC ${method} trailers-only: status=${s} (${GRPC_STATUS_NAMES[s] || '?'}) message="${msg}" http=${httpStatus}`));
+                    finish(reject, new Error(`gRPC ${method} trailers-only: status=${s} (${GRPC_STATUS_NAMES[s] || '?'}) http=${httpStatus}`));
                 }
                 // s===0 is unusual for trailers-only but let 'end' handle it
             } else if (httpStatus !== 200) {
@@ -95,7 +94,7 @@ function unaryUnary(session, method, requestBytes, metadata = {}, { timeoutMs = 
             }
         });
 
-        req.on('trailers', (t) => { trailers = t; if (debug) console.error('[grpc trailers]', t); });
+        req.on('trailers', (t) => { trailers = t; if (debug) console.error('[grpc trailers]', sanitizeHeaders(t)); });
         req.on('data', (chunk) => chunks.push(chunk));
         req.on('end', () => {
             if (timedOut || settled) return;
@@ -103,21 +102,20 @@ function unaryUnary(session, method, requestBytes, metadata = {}, { timeoutMs = 
             const effective = trailers || respHeaders || {};
             const s = effective['grpc-status'];
             if (s !== undefined && Number(s) !== 0) {
-                const msg = effective['grpc-message'] || GRPC_STATUS_NAMES[Number(s)] || 'unknown';
-                finish(reject, new Error(`gRPC ${method} status=${s} (${GRPC_STATUS_NAMES[Number(s)] || '?'}) message="${msg}"`));
+                finish(reject, new Error(`gRPC ${method} status=${s} (${GRPC_STATUS_NAMES[Number(s)] || '?'})`));
                 return;
             }
             if (body.length === 0) {
                 const dump = JSON.stringify({
                     respHeaders: sanitizeHeaders(respHeaders),
-                    trailers,
+                    trailers: sanitizeHeaders(trailers),
                 });
                 finish(reject, new Error(`gRPC ${method} returned empty body; ${dump}`));
                 return;
             }
             const frames = parseFrames(body);
             if (frames.length === 0) {
-                finish(reject, new Error(`gRPC ${method} body (${body.length}B) not parseable as gRPC frames; hex=${body.toString('hex').slice(0, 80)}…`));
+                finish(reject, new Error(`gRPC ${method} body (${body.length}B) not parseable as gRPC frames`));
                 return;
             }
             finish(resolve, frames[0]);

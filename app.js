@@ -2,6 +2,7 @@
 
 const Homey = require('homey');
 const moment = require('moment');
+const { sanitizeLogData, sanitizeString } = require('./lib/log-sanitizer');
 
 class Polestar extends Homey.App {
 	async onInit() {
@@ -69,7 +70,9 @@ class Polestar extends Homey.App {
 		datestring = `${datestring} - ${timestring}`;
 
 		const debugLog = this.homey.settings.get('debugLog') || [];
-		const entry = { registered: debugDateString, severity, message };
+		const safeMessage = sanitizeString(String(message));
+		const safeInstance = sanitizeString(String(instance));
+		const entry = { registered: debugDateString, severity, message: safeMessage };
 
 		switch (severity) {
 			case 'DEBUG':
@@ -86,21 +89,15 @@ class Polestar extends Homey.App {
 				break;
 		}
 
-		const logMessage = `${datestring} [${instance}] [${severity}] ${message}`;
+		const logMessage = `${datestring} [${safeInstance}] [${severity}] ${safeMessage}`;
 
 		// Use a nullish check so we still log explicit 0 / false / '' values —
 		// `if (data)` would silently drop them and we'd be unable to tell
 		// "vehicle count: 0" from "vehicle count: undefined" in the log.
 		if (data !== null && data !== undefined) {
-			console.log(logMessage, data);
-
-			if (typeof data === 'string') {
-				entry.data = { data };
-			} else if (data && data.message) {
-				entry.data = { error: data.message, stacktrace: data.stack };
-			} else {
-				entry.data = data;
-			}
+			const safeData = sanitizeLogData(data);
+			console.log(logMessage, safeData);
+			entry.data = typeof safeData === 'string' ? { data: safeData } : safeData;
 		} else {
 			console.log(logMessage);
 		}
