@@ -11,9 +11,10 @@ status and remote-control commands as Homey capabilities and flow cards.
 - **Polestar 2** — should work via C3; feedback from P2 owners welcome
 
 Feature availability differs per car. The integration discovers exterior
-contacts from each vehicle's reported fields and probes write services on first
-use. Unsupported capabilities are hidden automatically instead of appearing as
-empty tiles.
+contacts from each vehicle's reported fields and probes charging controls on every
+successful startup. Unsupported capabilities are hidden automatically instead of
+appearing as empty tiles. Charge-limit bounds are model-aware (Polestar 3: 40–100%
+in 10% steps), while valid values returned by the vehicle API are always preserved.
 
 ## What's included
 
