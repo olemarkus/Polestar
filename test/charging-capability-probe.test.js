@@ -104,6 +104,17 @@ test('model bounds are configured even when the target-SoC startup probe is tran
     assert.deepEqual(polestar2._options.target_polestarChargeLimit, { min: 50, max: 100, step: 5 });
 });
 
+test('charge-limit setup does not read capability options from Homey', async () => {
+    const device = vehicleHarness({ capabilities: ['target_polestarChargeLimit'] });
+    device.getCapabilityOptions = () => { throw new Error('Invalid Capability: target_polestarChargeLimit'); };
+
+    await device._configureChargeLimitProfile();
+
+    assert.deepEqual(device._options.target_polestarChargeLimit, { min: 40, max: 100, step: 10 });
+    assert.deepEqual(device._store.configuredChargeLimitProfile, { min: 40, max: 100, step: 10 });
+    assert.equal(await device._validateTargetSoc(40), 40);
+});
+
 test('a non-12 gRPC status containing not supported does not remove a capability', async () => {
     const device = vehicleHarness({ capabilities: ['target_polestarAmpLimit'] });
     device.polestar = { getAmpLimit: async () => { throw new Error('status=9 not supported while charging'); } };

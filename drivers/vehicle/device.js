@@ -6,7 +6,6 @@ const PolestarC3Compat = require('../../clone_modules/polestar-c3/compat');
 const HomeyCrypt = require('../../lib/homeycrypt')
 const EvChargingState = require('../../lib/evChargingState')
 const {
-    chargeLimitProfileForModel,
     effectiveChargeLimitProfile,
     isChargeLimitAllowed,
 } = require('./charge-limit');
@@ -856,25 +855,30 @@ class PolestarVehicle extends Device {
         return profile;
     }
 
-    async _configureChargeLimitProfile() {
+    async _configureChargeLimitProfile(profile = this._chargeLimitProfile(), { force = false } = {}) {
         const capability = 'target_polestarChargeLimit';
         if (!this.hasCapability(capability)) return;
-        const profile = this._chargeLimitProfile();
-        const currentOptions = await this.getCapabilityOptions(capability) || {};
-        if (currentOptions.min !== profile.min || currentOptions.max !== profile.max || currentOptions.step !== profile.step) {
-            await this.setCapabilityOptions(capability, profile);
-        }
+        // Homey can report a dynamically migrated capability through
+        // hasCapability() while getCapabilityOptions() still rejects it. Keep
+        // our last successfully applied profile in the device store instead of
+        // relying on those two SDK views being synchronized during startup.
+        const configured = this.getStoreValue('configuredChargeLimitProfile');
+        if (!force && configured && configured.min === profile.min
+            && configured.max === profile.max && configured.step === profile.step) return;
+        await this.setCapabilityOptions(capability, profile);
+        await this.setStoreValue('configuredChargeLimitProfile', profile);
     }
 
     async _applyChargeLimitValue(value) {
         if (!Number.isInteger(value) || value < 1 || value > 100) return false;
         const capability = 'target_polestarChargeLimit';
         const profile = this._chargeLimitProfile(value);
-        if (!this.hasCapability(capability)) await this.addCapability(capability);
-        const currentOptions = await this.getCapabilityOptions(capability) || {};
-        if (currentOptions.min !== profile.min || currentOptions.max !== profile.max || currentOptions.step !== profile.step) {
-            await this.setCapabilityOptions(capability, profile);
+        let capabilityAdded = false;
+        if (!this.hasCapability(capability)) {
+            await this.addCapability(capability);
+            capabilityAdded = true;
         }
+        await this._configureChargeLimitProfile(profile, { force: capabilityAdded });
         const storedProfile = this.getStoreValue('chargeLimitProfile');
         if (!storedProfile || storedProfile.min !== profile.min
             || storedProfile.max !== profile.max || storedProfile.step !== profile.step) {
@@ -889,13 +893,7 @@ class PolestarVehicle extends Device {
             throw new Error('Charge limit is not supported on this vehicle');
         }
         const level = Number(value);
-        const options = await this.getCapabilityOptions('target_polestarChargeLimit') || {};
-        const modelProfile = chargeLimitProfileForModel(this.getData().modelName);
-        const profile = {
-            min: Number.isFinite(options.min) ? options.min : modelProfile.min,
-            max: Number.isFinite(options.max) ? options.max : modelProfile.max,
-            step: Number.isFinite(options.step) ? options.step : modelProfile.step,
-        };
+        const profile = this._chargeLimitProfile();
         if (!isChargeLimitAllowed(level, profile)) {
             throw new Error(`Charge limit must be ${profile.min}–${profile.max}% in ${profile.step}% steps for this vehicle`);
         }
