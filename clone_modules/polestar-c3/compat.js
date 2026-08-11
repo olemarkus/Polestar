@@ -65,6 +65,7 @@ class PolestarCompat {
         return {
             vin: match.vin,
             id: match.internalVehicleIdentifier,
+            honkFlashType: match.honkFlashType,
         };
     }
 
