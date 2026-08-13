@@ -13,6 +13,24 @@ const DEFAULT_HOME_RADIUS_M = 150;
 const EARTH_RADIUS_M = 6371000;
 const BATTERY_PRECONDITIONING_STATUS_CAPABILITY = 'measure_polestarBatteryPreconditioningStatus';
 
+// Trigger-token text for each preconditioning state, kept word-for-word in step
+// with the enum titles in the capability so a flow token and the device tile
+// never disagree. The capability carries all 13 locales; these are the ones
+// locales/ covers, and homey.__() falls back to `en` for the rest.
+const BATTERY_PRECONDITIONING_LABELS = {
+    in_progress: { en: 'In progress', nl: 'Bezig', no: 'Pågår', de: 'In Bearbeitung', da: 'I gang', sv: 'Pågår' },
+    on:          { en: 'On', nl: 'Aan', no: 'På', de: 'Ein', da: 'Til', sv: 'På' },
+    off:         { en: 'Off', nl: 'Uit', no: 'Av', de: 'Aus', da: 'Fra', sv: 'Av' },
+    finished:    { en: 'Finished', nl: 'Voltooid', no: 'Fullført', de: 'Abgeschlossen', da: 'Afsluttet', sv: 'Slutförd' },
+    optimal:     { en: 'Battery temperature optimal', nl: 'Batterijtemperatuur optimaal', no: 'Batteritemperaturen er optimal', de: 'Batterietemperatur optimal', da: 'Batteritemperaturen er optimal', sv: 'Batteritemperaturen är optimal' },
+    planned:     { en: 'Planned', nl: 'Gepland', no: 'Planlagt', de: 'Geplant', da: 'Planlagt', sv: 'Planerad' },
+    fault:       { en: 'Unavailable: fault', nl: 'Niet beschikbaar: storing', no: 'Ikke tilgjengelig: feil', de: 'Nicht verfügbar: Fehler', da: 'Ikke tilgængelig: fejl', sv: 'Inte tillgänglig: fel' },
+    charging:    { en: 'Unavailable: charging', nl: 'Niet beschikbaar: laden', no: 'Ikke tilgjengelig: lading', de: 'Nicht verfügbar: Laden', da: 'Ikke tilgængelig: opladning', sv: 'Inte tillgänglig: laddning' },
+    low_energy:  { en: 'Unavailable: low energy', nl: 'Niet beschikbaar: batterij bijna leeg', no: 'Ikke tilgjengelig: lavt energinivå', de: 'Nicht verfügbar: niedriger Ladestand', da: 'Ikke tilgængelig: lavt energiniveau', sv: 'Inte tillgänglig: låg energinivå' },
+    unavailable: { en: 'Unavailable', nl: 'Niet beschikbaar', no: 'Ikke tilgjengelig', de: 'Nicht verfügbar', da: 'Ikke tilgængelig', sv: 'Inte tillgänglig' },
+    unknown:     { en: 'Unknown', nl: 'Onbekend', no: 'Ukjent', de: 'Unbekannt', da: 'Ukendt', sv: 'Okänd' },
+};
+
 // Haversine great-circle distance in meters. Inlined so we don't pull in
 // geolib just for one call. Accurate to sub-meter at driveway scale.
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -111,6 +129,14 @@ class PolestarVehicle extends Device {
     }
 
     async onInit() {
+        // Device has getName(), not a `name` property — without this every
+        // log call passing this.name handed the logger undefined, so it fell
+        // back to its 'Polestar App' default and those lines were attributed to
+        // the app instead of the car. Set before the early returns below, or the
+        // failure paths log under the wrong name too. Matches how the CSV driver
+        // already does it.
+        this.name = this.getName();
+
         if (this.polestar == null) {
             let PolestarUser = this.homey.settings.get('user_email');
             try {
@@ -475,8 +501,6 @@ class PolestarVehicle extends Device {
             var batteryInfo = await this.polestar.getBattery();
             this.homey.app.log('Battery:', 'PolestarVehicle', 'DEBUG', batteryInfo);
 
-            await this._updateBatteryPreconditioningState(batteryInfo);
-
             const batterySoc = Math.floor(batteryInfo.batteryChargeLevelPercentage);
             this.setCapabilityValue('measure_battery', batterySoc);
             // Deprecated duplicate — only present on devices paired before it was
@@ -554,6 +578,12 @@ class PolestarVehicle extends Device {
             this.setCapabilityValue('measure_vehicleChargeTimeRemaining',
                 isCharging ? batteryInfo.estimatedChargingTimeToFullMinutes : null);
             // TODO: Add capability to show charging error (CHARGING_STATUS_ERROR)
+
+            // Last in the block on purpose. Preconditioning is a secondary
+            // reading, and everything above is the core telemetry — running it
+            // first meant a throw here cost the whole poll's SoC, range, power
+            // and charging state.
+            await this._updateBatteryPreconditioningState(batteryInfo);
         } catch (err) {
             if (err.message === 'Not logged in') {
                 this.homey.app.log('Session expired, attempting to re-login', 'PolestarVehicle', 'WARNING');
@@ -599,7 +629,6 @@ class PolestarVehicle extends Device {
         if (!reported) return;
 
         const key = batteryInfo.batteryPreconditioningStatusKey || 'unknown';
-        const label = batteryInfo.batteryPreconditioningStatusLabel || 'Unknown';
         const previous = this.hasCapability(BATTERY_PRECONDITIONING_STATUS_CAPABILITY)
             ? this.getCapabilityValue(BATTERY_PRECONDITIONING_STATUS_CAPABILITY)
             : null;
@@ -621,10 +650,14 @@ class PolestarVehicle extends Device {
 
         if (!transition.changed) return;
 
-        const card = this.homey.flow.getDeviceTriggerCard('battery_preconditioning_changed');
-        if (!card) return;
+        // getDeviceTriggerCard throws on an id the built app.json doesn't carry,
+        // so it belongs inside the guard with the trigger itself — outside it, a
+        // card-id slip would propagate into the battery poll's catch.
         try {
-            await card.trigger(this, { state: label }, {});
+            const card = this.homey.flow.getDeviceTriggerCard('battery_preconditioning_changed');
+            if (!card) return;
+            const state = this.homey.__(BATTERY_PRECONDITIONING_LABELS[key] || BATTERY_PRECONDITIONING_LABELS.unknown);
+            await card.trigger(this, { state }, {});
         } catch (err) {
             this.homey.app.log('Battery preconditioning state trigger failed', this.name, 'ERROR', err);
         }
@@ -1120,7 +1153,10 @@ class PolestarVehicle extends Device {
     }
 
     async onRenamed(name) {
-        this.homey.app.log('PolestarVehicle was renamed', 'PolestarVehicle');
+        // Keep the cached log name in step, otherwise every later line keeps
+        // using the old one until the app restarts.
+        this.name = name;
+        this.homey.app.log('PolestarVehicle was renamed', this.name);
     }
 
     async onDeleted() {

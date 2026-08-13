@@ -1,7 +1,7 @@
 {
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "com.Coderax.Polestar",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "compatibility": ">=12.4.5",
   "sdk": 3,
   "platforms": [
@@ -655,6 +655,67 @@
             "type": "device",
             "name": "device",
             "filter": "driver_id=polestar-2-csv"
+          }
+        ]
+      },
+      {
+        "id": "battery_preconditioning_changed",
+        "title": {
+          "en": "Battery preconditioning changed",
+          "nl": "Batterijvoorconditionering gewijzigd",
+          "de": "Batterievorkonditionierung geändert",
+          "fr": "Préconditionnement de la batterie modifié",
+          "it": "Precondizionamento della batteria modificato",
+          "sv": "Batteriförkonditionering ändrad",
+          "no": "Batteriforvarming endret",
+          "es": "Preacondicionamiento de la batería modificado",
+          "da": "Batteriforkonditionering ændret",
+          "ru": "Состояние подготовки батареи изменилось",
+          "pl": "Stan przygotowania akumulatora zmienił się",
+          "ko": "배터리 사전 조절 상태 변경됨",
+          "ja": "バッテリー事前調整状態が変更された"
+        },
+        "hint": {
+          "en": "When the reported battery preconditioning state changes.",
+          "nl": "Wanneer de gemelde batterijvoorconditionering verandert.",
+          "de": "Wenn sich der gemeldete Status der Batterievorkonditionierung ändert.",
+          "fr": "Lorsque l'état signalé du préconditionnement de la batterie change.",
+          "it": "Quando cambia lo stato segnalato del precondizionamento della batteria.",
+          "sv": "När den rapporterade statusen för batteriförkonditionering ändras.",
+          "no": "Når den rapporterte statusen for batteriforvarming endres.",
+          "es": "Cuando cambia el estado notificado del preacondicionamiento de la batería.",
+          "da": "Når den rapporterede status for batteriforkonditionering ændres.",
+          "ru": "Когда изменяется переданное состояние подготовки батареи.",
+          "pl": "Gdy zmieni się zgłoszony stan przygotowania akumulatora.",
+          "ko": "보고된 배터리 사전 조절 상태가 변경될 때.",
+          "ja": "報告されたバッテリー事前調整状態が変化したとき。"
+        },
+        "tokens": [
+          {
+            "name": "state",
+            "type": "string",
+            "title": {
+              "en": "State",
+              "nl": "Status",
+              "de": "Status",
+              "fr": "État",
+              "it": "Stato",
+              "sv": "Status",
+              "no": "Status",
+              "es": "Estado",
+              "da": "Status",
+              "ru": "Состояние",
+              "pl": "Stan",
+              "ko": "상태",
+              "ja": "状態"
+            }
+          }
+        ],
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=vehicle&capabilities=measure_polestarBatteryPreconditioningStatus"
           }
         ]
       },
@@ -1586,6 +1647,250 @@
       }
     ],
     "conditions": [
+      {
+        "id": "battery_preconditioning_state_is",
+        "title": {
+          "en": "Battery preconditioning state !{{is|is not}}",
+          "nl": "Batterijvoorconditionering !{{is|is niet}}",
+          "de": "Batterievorkonditionierung !{{ist|ist nicht}}",
+          "fr": "Le préconditionnement de la batterie !{{est|n'est pas}}",
+          "it": "Il precondizionamento della batteria !{{è|non è}}",
+          "sv": "Batteriförkonditioneringen !{{är|är inte}}",
+          "no": "Batteriforvarmingen !{{er|er ikke}}",
+          "es": "El preacondicionamiento de la batería !{{está|no está}}",
+          "da": "Batteriforkonditioneringen !{{er|er ikke}}",
+          "ru": "Подготовка батареи !{{имеет|не имеет}} состояние",
+          "pl": "Przygotowanie akumulatora !{{jest|nie jest}} w stanie",
+          "ko": "배터리 사전 조절 상태가 다음!{{과 같음|과 다름}}",
+          "ja": "バッテリー事前調整状態が!{{次と一致する|次と一致しない}}"
+        },
+        "titleFormatted": {
+          "en": "Battery preconditioning state !{{is|is not}} [[state]]",
+          "nl": "Batterijvoorconditionering !{{is|is niet}} [[state]]",
+          "de": "Batterievorkonditionierung !{{ist|ist nicht}} [[state]]",
+          "fr": "Le préconditionnement de la batterie !{{est|n'est pas}} [[state]]",
+          "it": "Il precondizionamento della batteria !{{è|non è}} [[state]]",
+          "sv": "Batteriförkonditioneringen !{{är|är inte}} [[state]]",
+          "no": "Batteriforvarmingen !{{er|er ikke}} [[state]]",
+          "es": "El preacondicionamiento de la batería !{{está|no está}} [[state]]",
+          "da": "Batteriforkonditioneringen !{{er|er ikke}} [[state]]",
+          "ru": "Подготовка батареи !{{имеет|не имеет}} состояние [[state]]",
+          "pl": "Przygotowanie akumulatora !{{jest|nie jest}} w stanie [[state]]",
+          "ko": "배터리 사전 조절 상태가 [[state]]!{{과 같음|과 다름}}",
+          "ja": "バッテリー事前調整状態が [[state]] !{{と一致する|と一致しない}}"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=vehicle&capabilities=measure_polestarBatteryPreconditioningStatus"
+          },
+          {
+            "type": "dropdown",
+            "name": "state",
+            "values": [
+              {
+                "id": "in_progress",
+                "label": {
+                  "en": "In progress",
+                  "nl": "Bezig",
+                  "de": "In Bearbeitung",
+                  "fr": "En cours",
+                  "it": "In corso",
+                  "sv": "Pågår",
+                  "no": "Pågår",
+                  "es": "En curso",
+                  "da": "I gang",
+                  "ru": "Выполняется",
+                  "pl": "W toku",
+                  "ko": "진행 중",
+                  "ja": "実行中"
+                }
+              },
+              {
+                "id": "on",
+                "label": {
+                  "en": "On",
+                  "nl": "Aan",
+                  "de": "Ein",
+                  "fr": "Activé",
+                  "it": "Attivo",
+                  "sv": "På",
+                  "no": "På",
+                  "es": "Activado",
+                  "da": "Til",
+                  "ru": "Включено",
+                  "pl": "Włączone",
+                  "ko": "켜짐",
+                  "ja": "オン"
+                }
+              },
+              {
+                "id": "off",
+                "label": {
+                  "en": "Off",
+                  "nl": "Uit",
+                  "de": "Aus",
+                  "fr": "Désactivé",
+                  "it": "Disattivato",
+                  "sv": "Av",
+                  "no": "Av",
+                  "es": "Desactivado",
+                  "da": "Fra",
+                  "ru": "Выключено",
+                  "pl": "Wyłączone",
+                  "ko": "꺼짐",
+                  "ja": "オフ"
+                }
+              },
+              {
+                "id": "finished",
+                "label": {
+                  "en": "Finished",
+                  "nl": "Voltooid",
+                  "de": "Abgeschlossen",
+                  "fr": "Terminé",
+                  "it": "Completato",
+                  "sv": "Slutförd",
+                  "no": "Fullført",
+                  "es": "Finalizado",
+                  "da": "Afsluttet",
+                  "ru": "Завершено",
+                  "pl": "Zakończone",
+                  "ko": "완료됨",
+                  "ja": "完了"
+                }
+              },
+              {
+                "id": "optimal",
+                "label": {
+                  "en": "Battery temperature optimal",
+                  "nl": "Batterijtemperatuur optimaal",
+                  "de": "Batterietemperatur optimal",
+                  "fr": "Température de la batterie optimale",
+                  "it": "Temperatura della batteria ottimale",
+                  "sv": "Batteritemperaturen är optimal",
+                  "no": "Batteritemperaturen er optimal",
+                  "es": "Temperatura de la batería óptima",
+                  "da": "Batteritemperaturen er optimal",
+                  "ru": "Оптимальная температура батареи",
+                  "pl": "Optymalna temperatura akumulatora",
+                  "ko": "배터리 온도 최적",
+                  "ja": "バッテリー温度最適"
+                }
+              },
+              {
+                "id": "planned",
+                "label": {
+                  "en": "Planned",
+                  "nl": "Gepland",
+                  "de": "Geplant",
+                  "fr": "Planifié",
+                  "it": "Pianificato",
+                  "sv": "Planerad",
+                  "no": "Planlagt",
+                  "es": "Planificado",
+                  "da": "Planlagt",
+                  "ru": "Запланировано",
+                  "pl": "Zaplanowane",
+                  "ko": "예정됨",
+                  "ja": "予定"
+                }
+              },
+              {
+                "id": "fault",
+                "label": {
+                  "en": "Unavailable: fault",
+                  "nl": "Niet beschikbaar: storing",
+                  "de": "Nicht verfügbar: Fehler",
+                  "fr": "Indisponible : défaut",
+                  "it": "Non disponibile: guasto",
+                  "sv": "Inte tillgänglig: fel",
+                  "no": "Ikke tilgjengelig: feil",
+                  "es": "No disponible: fallo",
+                  "da": "Ikke tilgængelig: fejl",
+                  "ru": "Недоступно: неисправность",
+                  "pl": "Niedostępne: usterka",
+                  "ko": "사용할 수 없음: 오류",
+                  "ja": "利用不可：故障"
+                }
+              },
+              {
+                "id": "charging",
+                "label": {
+                  "en": "Unavailable: charging",
+                  "nl": "Niet beschikbaar: laden",
+                  "de": "Nicht verfügbar: Laden",
+                  "fr": "Indisponible : recharge",
+                  "it": "Non disponibile: ricarica",
+                  "sv": "Inte tillgänglig: laddning",
+                  "no": "Ikke tilgjengelig: lading",
+                  "es": "No disponible: cargando",
+                  "da": "Ikke tilgængelig: opladning",
+                  "ru": "Недоступно: зарядка",
+                  "pl": "Niedostępne: ładowanie",
+                  "ko": "사용할 수 없음: 충전 중",
+                  "ja": "利用不可：充電中"
+                }
+              },
+              {
+                "id": "low_energy",
+                "label": {
+                  "en": "Unavailable: low energy",
+                  "nl": "Niet beschikbaar: batterij bijna leeg",
+                  "de": "Nicht verfügbar: niedriger Ladestand",
+                  "fr": "Indisponible : niveau d'énergie faible",
+                  "it": "Non disponibile: energia insufficiente",
+                  "sv": "Inte tillgänglig: låg energinivå",
+                  "no": "Ikke tilgjengelig: lavt energinivå",
+                  "es": "No disponible: poca energía",
+                  "da": "Ikke tilgængelig: lavt energiniveau",
+                  "ru": "Недоступно: низкий заряд",
+                  "pl": "Niedostępne: niski poziom energii",
+                  "ko": "사용할 수 없음: 에너지 부족",
+                  "ja": "利用不可：低エネルギー"
+                }
+              },
+              {
+                "id": "unavailable",
+                "label": {
+                  "en": "Unavailable",
+                  "nl": "Niet beschikbaar",
+                  "de": "Nicht verfügbar",
+                  "fr": "Indisponible",
+                  "it": "Non disponibile",
+                  "sv": "Inte tillgänglig",
+                  "no": "Ikke tilgjengelig",
+                  "es": "No disponible",
+                  "da": "Ikke tilgængelig",
+                  "ru": "Недоступно",
+                  "pl": "Niedostępne",
+                  "ko": "사용할 수 없음",
+                  "ja": "利用不可"
+                }
+              },
+              {
+                "id": "unknown",
+                "label": {
+                  "en": "Unknown",
+                  "nl": "Onbekend",
+                  "de": "Unbekannt",
+                  "fr": "Inconnu",
+                  "it": "Sconosciuto",
+                  "sv": "Okänd",
+                  "no": "Ukjent",
+                  "es": "Desconocido",
+                  "da": "Ukendt",
+                  "ru": "Неизвестно",
+                  "pl": "Nieznane",
+                  "ko": "알 수 없음",
+                  "ja": "不明"
+                }
+              }
+            ]
+          }
+        ]
+      },
       {
         "id": "is_locked",
         "title": {
@@ -5309,6 +5614,229 @@
       },
       "units": "kWh",
       "decimals": 2,
+      "getable": true,
+      "setable": false,
+      "insights": true
+    },
+    "measure_polestarBatteryPreconditioningStatus": {
+      "type": "enum",
+      "uiComponent": "sensor",
+      "icon": "/drivers/vehicle/assets/charging.svg",
+      "title": {
+        "en": "Battery preconditioning status",
+        "nl": "Status batterijvoorconditionering",
+        "de": "Status der Batterievorkonditionierung",
+        "fr": "État du préconditionnement de la batterie",
+        "it": "Stato del precondizionamento della batteria",
+        "sv": "Status för batteriförkonditionering",
+        "no": "Status for batteriforvarming",
+        "es": "Estado del preacondicionamiento de la batería",
+        "da": "Status for batteriforkonditionering",
+        "ru": "Статус подготовки батареи",
+        "pl": "Stan przygotowania akumulatora",
+        "ko": "배터리 사전 조절 상태",
+        "ja": "バッテリー事前調整状態"
+      },
+      "values": [
+        {
+          "id": "in_progress",
+          "title": {
+            "en": "In progress",
+            "nl": "Bezig",
+            "de": "In Bearbeitung",
+            "fr": "En cours",
+            "it": "In corso",
+            "sv": "Pågår",
+            "no": "Pågår",
+            "es": "En curso",
+            "da": "I gang",
+            "ru": "Выполняется",
+            "pl": "W toku",
+            "ko": "진행 중",
+            "ja": "実行中"
+          }
+        },
+        {
+          "id": "on",
+          "title": {
+            "en": "On",
+            "nl": "Aan",
+            "de": "Ein",
+            "fr": "Activé",
+            "it": "Attivo",
+            "sv": "På",
+            "no": "På",
+            "es": "Activado",
+            "da": "Til",
+            "ru": "Включено",
+            "pl": "Włączone",
+            "ko": "켜짐",
+            "ja": "オン"
+          }
+        },
+        {
+          "id": "off",
+          "title": {
+            "en": "Off",
+            "nl": "Uit",
+            "de": "Aus",
+            "fr": "Désactivé",
+            "it": "Disattivato",
+            "sv": "Av",
+            "no": "Av",
+            "es": "Desactivado",
+            "da": "Fra",
+            "ru": "Выключено",
+            "pl": "Wyłączone",
+            "ko": "꺼짐",
+            "ja": "オフ"
+          }
+        },
+        {
+          "id": "finished",
+          "title": {
+            "en": "Finished",
+            "nl": "Voltooid",
+            "de": "Abgeschlossen",
+            "fr": "Terminé",
+            "it": "Completato",
+            "sv": "Slutförd",
+            "no": "Fullført",
+            "es": "Finalizado",
+            "da": "Afsluttet",
+            "ru": "Завершено",
+            "pl": "Zakończone",
+            "ko": "완료됨",
+            "ja": "完了"
+          }
+        },
+        {
+          "id": "optimal",
+          "title": {
+            "en": "Battery temperature optimal",
+            "nl": "Batterijtemperatuur optimaal",
+            "de": "Batterietemperatur optimal",
+            "fr": "Température de la batterie optimale",
+            "it": "Temperatura della batteria ottimale",
+            "sv": "Batteritemperaturen är optimal",
+            "no": "Batteritemperaturen er optimal",
+            "es": "Temperatura de la batería óptima",
+            "da": "Batteritemperaturen er optimal",
+            "ru": "Оптимальная температура батареи",
+            "pl": "Optymalna temperatura akumulatora",
+            "ko": "배터리 온도 최적",
+            "ja": "バッテリー温度最適"
+          }
+        },
+        {
+          "id": "planned",
+          "title": {
+            "en": "Planned",
+            "nl": "Gepland",
+            "de": "Geplant",
+            "fr": "Planifié",
+            "it": "Pianificato",
+            "sv": "Planerad",
+            "no": "Planlagt",
+            "es": "Planificado",
+            "da": "Planlagt",
+            "ru": "Запланировано",
+            "pl": "Zaplanowane",
+            "ko": "예정됨",
+            "ja": "予定"
+          }
+        },
+        {
+          "id": "fault",
+          "title": {
+            "en": "Unavailable: fault",
+            "nl": "Niet beschikbaar: storing",
+            "de": "Nicht verfügbar: Fehler",
+            "fr": "Indisponible : défaut",
+            "it": "Non disponibile: guasto",
+            "sv": "Inte tillgänglig: fel",
+            "no": "Ikke tilgjengelig: feil",
+            "es": "No disponible: fallo",
+            "da": "Ikke tilgængelig: fejl",
+            "ru": "Недоступно: неисправность",
+            "pl": "Niedostępne: usterka",
+            "ko": "사용할 수 없음: 오류",
+            "ja": "利用不可：故障"
+          }
+        },
+        {
+          "id": "charging",
+          "title": {
+            "en": "Unavailable: charging",
+            "nl": "Niet beschikbaar: laden",
+            "de": "Nicht verfügbar: Laden",
+            "fr": "Indisponible : recharge",
+            "it": "Non disponibile: ricarica",
+            "sv": "Inte tillgänglig: laddning",
+            "no": "Ikke tilgjengelig: lading",
+            "es": "No disponible: cargando",
+            "da": "Ikke tilgængelig: opladning",
+            "ru": "Недоступно: зарядка",
+            "pl": "Niedostępne: ładowanie",
+            "ko": "사용할 수 없음: 충전 중",
+            "ja": "利用不可：充電中"
+          }
+        },
+        {
+          "id": "low_energy",
+          "title": {
+            "en": "Unavailable: low energy",
+            "nl": "Niet beschikbaar: batterij bijna leeg",
+            "de": "Nicht verfügbar: niedriger Ladestand",
+            "fr": "Indisponible : niveau d'énergie faible",
+            "it": "Non disponibile: energia insufficiente",
+            "sv": "Inte tillgänglig: låg energinivå",
+            "no": "Ikke tilgjengelig: lavt energinivå",
+            "es": "No disponible: poca energía",
+            "da": "Ikke tilgængelig: lavt energiniveau",
+            "ru": "Недоступно: низкий заряд",
+            "pl": "Niedostępne: niski poziom energii",
+            "ko": "사용할 수 없음: 에너지 부족",
+            "ja": "利用不可：低エネルギー"
+          }
+        },
+        {
+          "id": "unavailable",
+          "title": {
+            "en": "Unavailable",
+            "nl": "Niet beschikbaar",
+            "de": "Nicht verfügbar",
+            "fr": "Indisponible",
+            "it": "Non disponibile",
+            "sv": "Inte tillgänglig",
+            "no": "Ikke tilgjengelig",
+            "es": "No disponible",
+            "da": "Ikke tilgængelig",
+            "ru": "Недоступно",
+            "pl": "Niedostępne",
+            "ko": "사용할 수 없음",
+            "ja": "利用不可"
+          }
+        },
+        {
+          "id": "unknown",
+          "title": {
+            "en": "Unknown",
+            "nl": "Onbekend",
+            "de": "Unbekannt",
+            "fr": "Inconnu",
+            "it": "Sconosciuto",
+            "sv": "Okänd",
+            "no": "Ukjent",
+            "es": "Desconocido",
+            "da": "Ukendt",
+            "ru": "Неизвестно",
+            "pl": "Nieznane",
+            "ko": "알 수 없음",
+            "ja": "不明"
+          }
+        }
+      ],
       "getable": true,
       "setable": false,
       "insights": true

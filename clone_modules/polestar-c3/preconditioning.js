@@ -16,6 +16,12 @@ const UNAVAILABLE = Object.freeze({
 });
 
 function normalizeManualPreconditioning(manual) {
+    // Absence of field 29 is the only signal that a car does not have this
+    // feature. A present-but-empty submessage decodes to {} — proto3 omits zero
+    // values, so a car with nothing to say right now arrives exactly that way —
+    // and that car *does* support preconditioning. It falls through to the
+    // 'unknown' key below, which is what keeps the capability attached while the
+    // car is idle.
     if (!manual) {
         return { reported: false, key: null, label: 'Not reported' };
     }

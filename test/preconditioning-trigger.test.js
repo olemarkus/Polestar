@@ -219,6 +219,7 @@ test('capability persistence drives transitions and survives missing reports', a
     let value = null;
     const triggerCalls = [];
     const cardLookups = [];
+    const translated = [];
     const device = Object.create(PolestarVehicle.prototype);
     Object.assign(device, {
         name: 'Test vehicle',
@@ -237,6 +238,9 @@ test('capability persistence drives transitions and survives missing reports', a
         },
         homey: {
             app: { log: () => {} },
+            // The trigger token is localized, so the mock has to model __() the
+            // way Homey resolves it: pick the active language out of the map.
+            __: (map) => { translated.push(map); return map.en; },
             flow: {
                 getDeviceTriggerCard: (id) => {
                     cardLookups.push(id);
@@ -271,6 +275,15 @@ test('capability persistence drives transitions and survives missing reports', a
     assert.equal(triggerCalls.length, 1);
     assert.deepEqual(triggerCalls[0][1], { state: 'On' });
 
+    // The token must be handed to __() as a full language map, not a bare
+    // English string — the capability tile and the flow token have to agree in
+    // every locale, not just the default one.
+    assert.equal(translated.length, 1);
+    assert.equal(translated[0].en, 'On');
+    for (const lang of ['nl', 'no', 'de', 'da', 'sv']) {
+        assert.ok(translated[0][lang], `trigger token is missing the ${lang} translation`);
+    }
+
     await device._updateBatteryPreconditioningState({ batteryPreconditioningReported: false });
     assert.equal(value, 'on', 'missing field 29 must preserve the persisted value');
     assert.equal(triggerCalls.length, 1);
@@ -294,6 +307,7 @@ test('a persisted capability value is reused as the previous state after restart
         },
         homey: {
             app: { log: () => {} },
+            __: (map) => map.en,
             flow: {
                 getDeviceTriggerCard: () => ({ trigger: async (...args) => triggerCalls.push(args) }),
             },
