@@ -111,14 +111,14 @@ class Vehicle extends Driver {
         this.homey.app.log('Polestar flow cards registered', 'Polestar Driver', 'DEBUG');
     }
 
-    async onRepair(session, device) {
-        session.setHandler("showView", async (data) => {
+    async onRepair(session, _device) {
+        session.setHandler("showView", async () => {
             this.homey.app.log('Login page of repair is showing, send credentials');
 
             var username = this.homey.settings.get('user_email');
             var cryptedpassword = this.homey.settings.get('user_password');
             try {
-                plainpass = await HomeyCrypt.decrypt(cryptedpassword, username);
+                const plainpass = await HomeyCrypt.decrypt(cryptedpassword, username);
                 await session.emit('loadaccount', { username, password: plainpass });
             } catch (err) {
                 await session.emit('loadaccount', { username, password: '' })
@@ -171,7 +171,7 @@ class Vehicle extends Driver {
                 var username = this.homey.settings.get('user_email');
                 var cryptedpassword = this.homey.settings.get('user_password');
                 try {
-                    plainpass = await HomeyCrypt.decrypt(cryptedpassword, username);
+                    const plainpass = await HomeyCrypt.decrypt(cryptedpassword, username);
                     await session.emit('loadaccount', { username, password: plainpass });
                 } catch (err) {
                     await session.emit('loadaccount', { username, password: '' })
@@ -179,7 +179,7 @@ class Vehicle extends Driver {
             };
         });
 
-        session.setHandler('list_devices', async (data) => {
+        session.setHandler('list_devices', async () => {
             return mydevices;
         });
 
@@ -191,7 +191,7 @@ class Vehicle extends Driver {
             }
         });
 
-        session.setHandler('discover_vehicles', async (data) => {
+        session.setHandler('discover_vehicles', async () => {
             this.homey.app.log('Polestar vehicles discovery started...', 'Polestar Driver');
             let PolestarUser = this.homey.settings.get('user_email');
             let PolestarPwd = await HomeyCrypt.decrypt(this.homey.settings.get('user_password'), PolestarUser);
@@ -201,8 +201,9 @@ class Vehicle extends Driver {
                 await polestar.login();
                 this.homey.app.log('Login successful, retrieving vehicles', 'Polestar Driver');
                 var vehiclelist = await polestar.getVehicles();
+                let vehicles;
                 if (vehiclelist && vehiclelist.length > 0) {
-                    var vehicles = vehiclelist.map((bev) => {
+                    vehicles = vehiclelist.map((bev) => {
                         try {
                             // Log ownership status so we can correlate feature-availability
                             // complaints with linked/owner state (C3 GetMyCars returns these
@@ -222,7 +223,7 @@ class Vehicle extends Driver {
                     });
                 } else {
                     this.homey.app.log('No vehicles found', 'Polestar Driver', 'WARNING');
-                    var vehicles = [];
+                    vehicles = [];
                     return await session.emit('noVehiclesFound', 'No vehicles found, please try again.');
                 }
 

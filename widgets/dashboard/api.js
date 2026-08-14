@@ -65,7 +65,7 @@ module.exports = {
     };
   },
 
-  async getVehicles({ homey, body }){
+  async getVehicles({ homey }){
     if (!homey) {
       throw new Error('Missing Homey');
     }

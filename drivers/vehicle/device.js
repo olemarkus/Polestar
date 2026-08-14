@@ -73,8 +73,6 @@ function friendlyGrpcError(message, label) {
     return `${label}: ${detail || 'error'} (code ${code})`;
 }
 
-var polestar = null;
-
 class PolestarVehicle extends Device {
 
     /**
@@ -368,13 +366,13 @@ class PolestarVehicle extends Device {
             if (!this.hasCapability('target_polestarChargeLimit'))
                 await this.addCapability('target_polestarChargeLimit');
         } else if (this.hasCapability('target_polestarChargeLimit')) {
-            try { await this.removeCapability('target_polestarChargeLimit'); } catch (_) {}
+            try { await this.removeCapability('target_polestarChargeLimit'); } catch (_) { /* Best-effort cleanup. */ }
         }
         if (!this._isFeatureUnsupported('amp_limit')) {
             if (!this.hasCapability('target_polestarAmpLimit'))
                 await this.addCapability('target_polestarAmpLimit');
         } else if (this.hasCapability('target_polestarAmpLimit')) {
-            try { await this.removeCapability('target_polestarAmpLimit'); } catch (_) {}
+            try { await this.removeCapability('target_polestarAmpLimit'); } catch (_) { /* Best-effort cleanup. */ }
         }
         if (!this.hasCapability('button.charge_start'))
             await this.addCapability('button.charge_start');
@@ -392,7 +390,7 @@ class PolestarVehicle extends Device {
             if (!this.hasCapability('button.windows_close')) await this.addCapability('button.windows_close');
         } else {
             for (const c of ['button.windows_open', 'button.windows_close']) {
-                if (this.hasCapability(c)) { try { await this.removeCapability(c); } catch (_) {} }
+                if (this.hasCapability(c)) { try { await this.removeCapability(c); } catch (_) { /* Best-effort cleanup. */ } }
             }
         }
 
@@ -806,7 +804,7 @@ class PolestarVehicle extends Device {
                     null;
                 if (featureKey) await this._markFeatureUnsupported(featureKey, err.message);
             }
-            throw new Error(friendlyGrpcError(err.message, label));
+            throw new Error(friendlyGrpcError(err.message, label), { cause: err });
         }
     }
 
@@ -1135,7 +1133,7 @@ class PolestarVehicle extends Device {
         this.homey.app.log('PolestarVehicle has been added', 'PolestarVehicle');
     }
 
-    async onSettings({ oldSettings, newSettings, changedKeys }) {
+    async onSettings({ oldSettings: _oldSettings, newSettings, changedKeys }) {
         this.homey.app.log('PolestarVehicle settings changed', 'PolestarVehicle', 'DEBUG', changedKeys);
 
         if (changedKeys.includes('windows_supported')) {
@@ -1172,10 +1170,10 @@ class PolestarVehicle extends Device {
      *  device that's already been removed or is re-initialising. */
     _cleanup() {
         this._destroyed = true;
-        if (this._timerTimers) { try { this.homey.clearInterval(this._timerTimers); } catch (_) {} this._timerTimers = null; }
-        if (this._timerHealth) { try { this.homey.clearInterval(this._timerHealth); } catch (_) {} this._timerHealth = null; }
+        if (this._timerTimers) { try { this.homey.clearInterval(this._timerTimers); } catch (_) { /* Best-effort cleanup. */ } this._timerTimers = null; }
+        if (this._timerHealth) { try { this.homey.clearInterval(this._timerHealth); } catch (_) { /* Best-effort cleanup. */ } this._timerHealth = null; }
         if (this.polestar && typeof this.polestar.close === 'function') {
-            try { this.polestar.close(); } catch (_) {}
+            try { this.polestar.close(); } catch (_) { /* Best-effort cleanup. */ }
         }
     }
 

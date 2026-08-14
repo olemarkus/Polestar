@@ -35,7 +35,7 @@ class Polestar extends Homey.App {
 		try {
 			this.homey.dashboards
 			  .getWidget('dashboard')
-			  .registerSettingAutocompleteListener('device', async (query, settings) => {
+			  .registerSettingAutocompleteListener('device', async (query, _settings) => {
 				this.log("List Polestar vehicles for widget settings")
 				const driver = await this.homey.drivers.getDriver('vehicle');
 				const devices = await driver.getDevices();

@@ -5,7 +5,6 @@ const path = require('path');
 const moment = require('moment');
 const axios = require('axios');
 const geolib = require('geolib');
-const base64url = require('base64-url');
 
 class PolestarBetaDevice extends Device {
     async onInit() {

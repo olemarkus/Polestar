@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "main": "app.js",
   "scripts": {
+    "lint": "eslint eslint.config.js app.js lib drivers widgets test",
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tsconfig/node16": "^16.1.1",
     "@types/homey": "npm:homey-apps-sdk-v3-types@^0.3.5",
-    "@types/node": "^20.8.10"
+    "@types/node": "^20.8.10",
+    "eslint": "^10.8.1",
+    "globals": "^17.11.0"
   },
   "dependencies": {
     "axios": "^1.7.4",
